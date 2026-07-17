@@ -273,7 +273,7 @@
             </header>
             <div class="modal-body">
                 <label class="form-label">Group Name</label>
-                <input type="text" class="form-input glass-inset" id="input-group-name" placeholder="e.g. Design Team 2026">
+                <input type="text" class="form-input glass-inset" id="input-group-name" placeholder="e.g. Design Team 2026" maxlength="70">
                 <label class="form-label" style="margin-top:16px">Add Members</label>
                 <input type="text" class="form-input glass-inset" id="input-member-search" placeholder="Search by name...">
                 <div class="member-results" id="member-results"></div>

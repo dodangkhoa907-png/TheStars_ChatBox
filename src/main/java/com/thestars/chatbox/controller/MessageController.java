@@ -69,9 +69,11 @@ public class MessageController {
 
         String content = payload.get("content");
         String messageType = payload.getOrDefault("messageType", "TEXT");
+        String clientMsgId = payload.get("clientMsgId");
 
         // Save message to database
         Message message = messageService.sendMessage(conversationId, sender.getId(), content, messageType);
+        message.setClientMsgId(clientMsgId);
 
         log.info("Message sent: conv={}, sender={}, type={}", conversationId, sender.getDisplayName(), messageType);
 

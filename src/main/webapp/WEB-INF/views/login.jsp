@@ -200,7 +200,7 @@
             <form id="form-register" class="hidden">
                 <div class="form-group" style="margin-bottom: 14px;">
                     <label class="form-label">Full Name</label>
-                    <input type="text" id="reg-name" class="form-input glass-inset" required placeholder="Nguyen Van A">
+                    <input type="text" id="reg-name" class="form-input glass-inset" required placeholder="Nguyen Van A" maxlength="70">
                 </div>
                 <div class="form-group" style="margin-bottom: 14px;">
                     <label class="form-label">Email (Gmail)</label>

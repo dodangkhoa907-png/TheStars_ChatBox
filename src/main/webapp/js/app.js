@@ -426,6 +426,16 @@ const ChatAppController = (() => {
 
     function appendMessage(msg) {
         if (msg.conversationId === activeConversationId) {
+            // Optimistic UI updates matching
+            if (msg.clientMsgId) {
+                const pendingEl = $(`.msg[data-client-msg-id="${msg.clientMsgId}"]`);
+                if (pendingEl) {
+                    updatePendingMessage(pendingEl, msg);
+                    hideTypingIndicatorDirect();
+                    loadConversations();
+                    return;
+                }
+            }
             appendMessageHtml(msg);
             scrollToBottom();
             hideTypingIndicatorDirect();
@@ -441,8 +451,14 @@ const ChatAppController = (() => {
 
         const isSelf = msg.senderId === currentUser.id;
         const msgDiv = document.createElement('div');
-        msgDiv.className = `msg ${isSelf ? 'msg--self' : 'msg--other'}`;
-        msgDiv.dataset.messageId = msg.id;
+        msgDiv.className = `msg ${isSelf ? 'msg--self' : 'msg--other'} ${msg.isPending ? 'msg--pending' : ''}`;
+        
+        if (msg.id) {
+            msgDiv.dataset.messageId = msg.id;
+        }
+        if (msg.clientMsgId) {
+            msgDiv.dataset.clientMsgId = msg.clientMsgId;
+        }
 
         const avatarUrl = msg.sender?.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(msg.sender?.displayName || 'User');
         const timeStr = formatTime(msg.createdAt);
@@ -497,28 +513,68 @@ const ChatAppController = (() => {
                 ).join('') + `</div>`;
         }
 
+        let statusHtml = '';
+        if (isSelf) {
+            if (msg.isPending) {
+                statusHtml = `<span class="msg__status status--sending" style="font-size: 10px; color: #fbbf24; margin-left: 6px; font-weight: 500;">Sending...</span>`;
+            } else {
+                statusHtml = `<span class="msg__status status--sent" style="font-size: 10px; color: #10b981; margin-left: 6px; font-weight: 500;">Sent</span>`;
+            }
+        }
+
         msgDiv.innerHTML = `
             ${!isSelf ? `<img src="${avatarUrl}" alt="Avatar" class="msg__avatar">` : ''}
             <div class="msg__body">
                 ${bubbleContent}
-                <div class="msg__time">${timeStr}</div>
+                <div class="msg__time">${timeStr} ${statusHtml}</div>
                 ${reactionsHtml}
             </div>
         `;
 
-        // Attach reaction click handlers
-        msgDiv.querySelectorAll('.reaction').forEach(chip => {
-            chip.addEventListener('click', () => {
-                toggleReaction(msg.id, chip.dataset.emoji);
+        // Attach reaction click handlers (only if not pending and has ID)
+        if (msg.id) {
+            msgDiv.querySelectorAll('.reaction').forEach(chip => {
+                chip.addEventListener('click', () => {
+                    toggleReaction(msg.id, chip.dataset.emoji);
+                });
             });
-        });
 
-        // Double click to send quick reaction 👍
-        msgDiv.querySelector('.msg__bubble')?.addEventListener('dblclick', () => {
-            toggleReaction(msg.id, '👍');
-        });
+            // Double click to send quick reaction 👍
+            msgDiv.querySelector('.msg__bubble')?.addEventListener('dblclick', () => {
+                toggleReaction(msg.id, '👍');
+            });
+        }
 
         scrollContainer.appendChild(msgDiv);
+    }
+
+    function updatePendingMessage(el, msg) {
+        // Remove pending class
+        el.classList.remove('msg--pending');
+        // Remove client ID and set server message ID
+        delete el.dataset.clientMsgId;
+        el.dataset.messageId = msg.id;
+
+        // Update time and status label
+        const timeEl = el.querySelector('.msg__time');
+        if (timeEl) {
+            const timeStr = formatTime(msg.createdAt);
+            const statusHtml = `<span class="msg__status status--sent" style="font-size: 10px; color: #10b981; margin-left: 6px; font-weight: 500;">Sent</span>`;
+            timeEl.innerHTML = `${timeStr} ${statusHtml}`;
+        }
+
+        // Attach reaction click handlers
+        // Double click to send quick reaction 👍
+        const bubble = el.querySelector('.msg__bubble');
+        if (bubble) {
+            // Remove old double click listeners (if any) and add new one
+            const newBubble = bubble.cloneNode(true);
+            bubble.parentNode.replaceChild(newBubble, bubble);
+            
+            newBubble.addEventListener('dblclick', () => {
+                toggleReaction(msg.id, '👍');
+            });
+        }
     }
 
     // ── Input & Send Handlers ──
@@ -564,10 +620,29 @@ const ChatAppController = (() => {
             if (!text) return;
 
             const isMeeting = isMeetingUrl(text);
+            const clientMsgId = 'client-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
 
+            // Create optimistic local message object
+            const tempMessage = {
+                clientMsgId: clientMsgId,
+                conversationId: activeConversationId,
+                senderId: currentUser.id,
+                content: text,
+                messageType: isMeeting ? 'MEETING_LINK' : 'TEXT',
+                createdAt: new Date().toISOString(),
+                sender: currentUser,
+                isPending: true
+            };
+
+            // Immediately append to UI
+            appendMessageHtml(tempMessage);
+            scrollToBottom();
+
+            // Send via WebSocket
             stompClient.send(`/app/chat.send/${activeConversationId}`, {}, JSON.stringify({
                 content: text,
-                messageType: isMeeting ? 'MEETING_LINK' : 'TEXT'
+                messageType: isMeeting ? 'MEETING_LINK' : 'TEXT',
+                clientMsgId: clientMsgId
             }));
 
             input.value = '';

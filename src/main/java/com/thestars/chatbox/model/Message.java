@@ -42,4 +42,7 @@ public class Message {
 
     /** Reactions on this message */
     private List<MessageReaction> reactions;
+
+    /** Temporary client-side message ID for optimistic UI updates */
+    private String clientMsgId;
 }

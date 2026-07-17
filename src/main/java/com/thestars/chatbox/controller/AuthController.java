@@ -67,6 +67,10 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "All fields are required"));
         }
 
+        if (displayName.length() > 70) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Full name must be under 70 characters"));
+        }
+
         if (userService.findByEmail(email).isPresent()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Email is already registered"));
         }

@@ -607,6 +607,7 @@ input { font-family: inherit; }
     font-size: 14px;
     line-height: 1.55;
     word-break: break-word;
+    transition: opacity 0.3s ease, box-shadow 0.3s ease;
 }
 .msg--other .msg__bubble {
     background: var(--glass-bg-dense);
@@ -619,6 +620,10 @@ input { font-family: inherit; }
     color: var(--text-white);
     border-bottom-right-radius: 4px;
     box-shadow: 0 4px 16px var(--neon-glow);
+}
+.msg--pending .msg__bubble {
+    opacity: 0.7;
+    box-shadow: none !important;
 }
 .msg__sender {
     font-size: 11px;

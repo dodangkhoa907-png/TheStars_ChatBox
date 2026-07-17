@@ -105,6 +105,10 @@ public class ChatController {
                 return ResponseEntity.badRequest()
                         .body(Map.of("error", "name and memberIds are required"));
             }
+            if (name.length() > 70) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Group name must be under 70 characters"));
+            }
             List<Long> memberIds = memberIdNumbers.stream()
                     .map(Number::longValue)
                     .toList();
