@@ -1,0 +1,8 @@
+target/
+.idea/
+.smarttomcat/
+.git/
+uploads/
+*.iml
+.env
+.env.local
