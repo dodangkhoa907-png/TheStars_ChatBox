@@ -31,33 +31,7 @@ public class ChatService {
      * Get all conversations for a user with last message preview and unread count.
      */
     public List<Conversation> getUserConversations(Long userId) {
-        List<Conversation> conversations = conversationDAO.findByUserId(userId);
-
-        for (Conversation conv : conversations) {
-            // Attach last message preview
-            messageDAO.findLatestByConversationId(conv.getId())
-                    .ifPresent(conv::setLastMessage);
-
-            // Compute unread count
-            conv.setUnreadCount(messageDAO.countUnread(conv.getId(), userId));
-
-            // For SINGLE conversations, set the name to the other participant's name
-            if ("SINGLE".equals(conv.getType())) {
-                List<Participant> participants = participantDAO.findByConversationId(conv.getId());
-                participants.stream()
-                        .filter(p -> !p.getUserId().equals(userId))
-                        .findFirst()
-                        .flatMap(p -> userDAO.findById(p.getUserId()))
-                        .ifPresent(otherUser -> {
-                            conv.setName(otherUser.getDisplayName());
-                            conv.setAvatar(otherUser.getAvatar());
-                            conv.setOtherUserId(otherUser.getId());
-                            conv.setOtherUserStatus(otherUser.getStatus());
-                        });
-            }
-        }
-
-        return conversations;
+        return conversationDAO.findByUserIdWithDetails(userId);
     }
 
     /**
@@ -134,11 +108,8 @@ public class ChatService {
         Optional<Conversation> conv = conversationDAO.findById(conversationId);
         conv.ifPresent(c -> {
             List<Participant> participants = participantDAO.findByConversationId(conversationId);
-            List<User> users = participants.stream()
-                    .map(p -> userDAO.findById(p.getUserId()))
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
-                    .toList();
+            List<Long> userIds = participants.stream().map(Participant::getUserId).toList();
+            List<User> users = userDAO.findByIds(userIds);
             c.setParticipants(users);
         });
         return conv;

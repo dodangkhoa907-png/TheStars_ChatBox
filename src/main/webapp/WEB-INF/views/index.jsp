@@ -124,6 +124,12 @@
                 <!-- Chat Header -->
                 <header class="chat-header glass-panel-thin hidden" id="chat-header">
                     <div class="chat-header__left">
+                        <button class="icon-btn btn-back hidden" id="btn-back-to-sidebar" title="Back to chats" style="margin-right: 8px;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="20" height="20">
+                                <line x1="19" y1="12" x2="5" y2="12"></line>
+                                <polyline points="12 19 5 12 12 5"></polyline>
+                            </svg>
+                        </button>
                         <img src="" alt="" class="avatar avatar--sm" id="chat-avatar">
                         <div>
                             <h2 class="chat-header__name" id="chat-name">...</h2>

@@ -3,6 +3,8 @@ package com.thestars.chatbox.service;
 import com.thestars.chatbox.dao.FriendshipDAO;
 import com.thestars.chatbox.dao.UserDAO;
 import com.thestars.chatbox.model.Friendship;
+import com.thestars.chatbox.model.User;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -105,9 +107,19 @@ public class FriendService {
     }
 
     private List<Friendship> enrich(List<Friendship> friendships) {
+        if (friendships == null || friendships.isEmpty()) return friendships;
+
+        List<Long> userIds = friendships.stream()
+                .flatMap(f -> java.util.stream.Stream.of(f.getRequesterId(), f.getAddresseeId()))
+                .distinct()
+                .toList();
+
+        Map<Long, User> userMap = userDAO.findByIds(userIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+
         friendships.forEach(f -> {
-            userDAO.findById(f.getRequesterId()).ifPresent(f::setRequester);
-            userDAO.findById(f.getAddresseeId()).ifPresent(f::setAddressee);
+            f.setRequester(userMap.get(f.getRequesterId()));
+            f.setAddressee(userMap.get(f.getAddresseeId()));
         });
         return friendships;
     }

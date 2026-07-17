@@ -1,6 +1,8 @@
 package com.thestars.chatbox.dao;
 
 import com.thestars.chatbox.model.Conversation;
+import com.thestars.chatbox.model.Message;
+import com.thestars.chatbox.model.User;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -56,6 +58,104 @@ public class ConversationDAO {
             ORDER BY c.updated_at DESC
             """;
         return jdbcTemplate.query(sql, rowMapper, userId);
+    }
+
+    /**
+     * Find all conversations that a user participates in with full details loaded
+     * (unread count, last message, sender, other participant info for 1-1 chats)
+     * in a single optimized query.
+     */
+    public List<Conversation> findByUserIdWithDetails(Long userId) {
+        String sql = """
+            SELECT 
+                c.id AS conv_id, 
+                c.name AS conv_name, 
+                c.type AS conv_type, 
+                c.avatar AS conv_avatar, 
+                c.created_by AS conv_created_by, 
+                c.created_at AS conv_created_at, 
+                c.updated_at AS conv_updated_at,
+                -- Last message fields
+                lm.id AS last_msg_id, 
+                lm.content AS last_msg_content, 
+                lm.message_type AS last_msg_type, 
+                lm.created_at AS last_msg_created_at, 
+                lm.sender_id AS last_msg_sender_id,
+                lmu.display_name AS last_msg_sender_name, 
+                lmu.avatar AS last_msg_sender_avatar,
+                -- Other participant fields (for SINGLE conversations)
+                other_u.id AS other_user_id, 
+                other_u.display_name AS other_user_display_name, 
+                other_u.avatar AS other_user_avatar, 
+                other_u.status AS other_user_status,
+                -- Unread count
+                (SELECT COUNT(*) FROM Messages m
+                 WHERE m.conversation_id = c.id
+                   AND m.sender_id != ?
+                   AND m.is_deleted = 0
+                   AND m.created_at > COALESCE(p.last_read_at, '1970-01-01')) AS unread_count
+            FROM Conversations c
+            INNER JOIN Participants p ON c.id = p.conversation_id
+            OUTER APPLY (
+                SELECT TOP 1 m2.id, m2.content, m2.message_type, m2.created_at, m2.sender_id
+                FROM Messages m2
+                WHERE m2.conversation_id = c.id AND m2.is_deleted = 0
+                ORDER BY m2.created_at DESC
+            ) lm
+            LEFT JOIN Users lmu ON lm.sender_id = lmu.id
+            LEFT JOIN Participants other_p ON c.id = other_p.conversation_id AND c.type = 'SINGLE' AND other_p.user_id != ?
+            LEFT JOIN Users other_u ON other_p.user_id = other_u.id
+            WHERE p.user_id = ?
+            ORDER BY c.updated_at DESC
+            """;
+
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Conversation conv = Conversation.builder()
+                    .id(rs.getLong("conv_id"))
+                    .name(rs.getString("conv_name"))
+                    .type(rs.getString("conv_type"))
+                    .avatar(rs.getString("conv_avatar"))
+                    .createdBy(rs.getObject("conv_created_by") != null ? rs.getLong("conv_created_by") : null)
+                    .createdAt(rs.getTimestamp("conv_created_at") != null ? rs.getTimestamp("conv_created_at").toLocalDateTime() : null)
+                    .updatedAt(rs.getTimestamp("conv_updated_at") != null ? rs.getTimestamp("conv_updated_at").toLocalDateTime() : null)
+                    .unreadCount(rs.getInt("unread_count"))
+                    .build();
+
+            // Populate last message
+            Long lastMsgId = rs.getObject("last_msg_id") != null ? rs.getLong("last_msg_id") : null;
+            if (lastMsgId != null) {
+                User sender = User.builder()
+                        .id(rs.getLong("last_msg_sender_id"))
+                        .displayName(rs.getString("last_msg_sender_name"))
+                        .avatar(rs.getString("last_msg_sender_avatar"))
+                        .build();
+
+                Message lastMsg = Message.builder()
+                        .id(lastMsgId)
+                        .conversationId(conv.getId())
+                        .senderId(sender.getId())
+                        .content(rs.getString("last_msg_content"))
+                        .messageType(rs.getString("last_msg_type"))
+                        .createdAt(rs.getTimestamp("last_msg_created_at") != null ? rs.getTimestamp("last_msg_created_at").toLocalDateTime() : null)
+                        .sender(sender)
+                        .build();
+
+                conv.setLastMessage(lastMsg);
+            }
+
+            // Populate other participant info for SINGLE type
+            if ("SINGLE".equals(conv.getType())) {
+                Long otherUserId = rs.getObject("other_user_id") != null ? rs.getLong("other_user_id") : null;
+                if (otherUserId != null) {
+                    conv.setOtherUserId(otherUserId);
+                    conv.setName(rs.getString("other_user_display_name"));
+                    conv.setAvatar(rs.getString("other_user_avatar"));
+                    conv.setOtherUserStatus(rs.getString("other_user_status"));
+                }
+            }
+
+            return conv;
+        }, userId, userId, userId);
     }
 
     /**

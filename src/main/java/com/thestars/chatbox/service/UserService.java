@@ -29,6 +29,20 @@ public class UserService {
         return userDAO.findByGoogleId(googleId);
     }
 
+    private final java.util.Map<String, User> emailToUserCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public void clearCache(String email) {
+        if (email != null) {
+            emailToUserCache.remove(email);
+        }
+    }
+
+    private void clearCacheByUserId(Long userId) {
+        if (userId != null) {
+            emailToUserCache.values().removeIf(user -> userId.equals(user.getId()));
+        }
+    }
+
     public Optional<User> findById(Long id) {
         return userDAO.findById(id);
     }
@@ -38,7 +52,14 @@ public class UserService {
     }
 
     public Optional<User> findByEmail(String email) {
-        return userDAO.findByEmail(email);
+        if (email == null) return Optional.empty();
+        User cached = emailToUserCache.get(email);
+        if (cached != null) {
+            return Optional.of(cached);
+        }
+        Optional<User> user = userDAO.findByEmail(email);
+        user.ifPresent(u -> emailToUserCache.put(email, u));
+        return user;
     }
 
     public List<User> searchByName(String query) {
@@ -50,19 +71,26 @@ public class UserService {
     }
 
     public User save(User user) {
-        return userDAO.save(user);
+        User saved = userDAO.save(user);
+        if (saved != null && saved.getEmail() != null) {
+            emailToUserCache.put(saved.getEmail(), saved);
+        }
+        return saved;
     }
 
     public void updateLastLoginIp(Long userId, String ip) {
         userDAO.updateLastLoginIp(userId, ip);
+        clearCacheByUserId(userId);
     }
 
     public void setOnline(Long userId) {
         userDAO.updateStatus(userId, "ONLINE");
+        clearCacheByUserId(userId);
     }
 
     public void setOffline(Long userId) {
         userDAO.updateStatus(userId, "OFFLINE");
+        clearCacheByUserId(userId);
     }
 
     // ── Token Session Management for Multi-Tab Autonomy ──

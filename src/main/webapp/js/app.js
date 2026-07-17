@@ -20,6 +20,7 @@ const ChatAppController = (() => {
     let selectedMembersForGroup = [];
     let typingTimeout = null;
     let typingIndicatorTimeout = null;
+    let lastTypingSent = 0;
 
     const TYPING_DEBOUNCE = 1000;
     const TYPING_INDICATOR_DURATION = 3000;
@@ -371,6 +372,11 @@ const ChatAppController = (() => {
     async function selectConversation(id) {
         activeConversationId = id;
 
+        const dashboard = $('.dashboard');
+        if (dashboard) {
+            dashboard.classList.add('show-chat-view');
+        }
+
         // Highlight selected
         $$('.chat-list li').forEach(li => {
             li.classList.toggle('active', parseInt(li.dataset.id) === id);
@@ -580,15 +586,28 @@ const ChatAppController = (() => {
                 }
             });
         }
+
+        const btnBack = $('#btn-back-to-sidebar');
+        if (btnBack) {
+            btnBack.addEventListener('click', () => {
+                activeConversationId = null;
+                $$('.chat-list li').forEach(li => li.classList.remove('active'));
+                const dashboard = $('.dashboard');
+                if (dashboard) {
+                    dashboard.classList.remove('show-chat-view');
+                }
+            });
+        }
     }
 
-    // ── Typing Indicator ──
     function sendTypingIndicator() {
         if (!stompClient || !stompClient.connected || !activeConversationId) return;
         
-        clearTimeout(typingTimeout);
-        stompClient.send(`/app/chat.typing/${activeConversationId}`, {}, '{}');
-        typingTimeout = setTimeout(() => {}, TYPING_DEBOUNCE);
+        const now = Date.now();
+        if (now - lastTypingSent > 2000) {
+            stompClient.send(`/app/chat.typing/${activeConversationId}`, {}, '{}');
+            lastTypingSent = now;
+        }
     }
 
     function showTypingIndicator(evt) {
