@@ -1194,7 +1194,8 @@ input { font-family: inherit; }
     border: 1px solid var(--inset-border);
     border-radius: var(--r-sm);
     color: var(--text);
-    font-size: 14px;
+    /* 16px stops iOS Safari from auto-zooming the whole page on focus */
+    font-size: 16px;
     outline: none;
     transition: all var(--t);
 }

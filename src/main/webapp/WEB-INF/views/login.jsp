@@ -128,6 +128,12 @@
         .password-toggle:hover {
             opacity: 1;
         }
+
+        @media (max-width: 480px) {
+            .portal-container { padding: 12px; }
+            .portal-card { padding: 24px 20px; }
+            .login-title { font-size: 24px; }
+        }
     </style>
 </head>
 <body>
