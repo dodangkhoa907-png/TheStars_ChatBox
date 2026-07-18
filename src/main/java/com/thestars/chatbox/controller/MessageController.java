@@ -76,7 +76,7 @@ public class MessageController {
         String clientMsgId = payload.get("clientMsgId");
 
         // Save message to database
-        Message message = messageService.sendMessage(conversationId, sender.getId(), content, messageType);
+        Message message = messageService.sendMessage(conversationId, sender, content, messageType, null);
         message.setClientMsgId(clientMsgId);
 
         log.info("Message sent: conv={}, sender={}, type={}", conversationId, sender.getDisplayName(), messageType);
@@ -174,7 +174,7 @@ public class MessageController {
         String content = payload.get("content");
         String clientMsgId = payload.get("clientMsgId");
 
-        Message reply = messageService.replyInThread(parentId, sender.getId(), content);
+        Message reply = messageService.replyInThread(parentId, sender, content);
         reply.setClientMsgId(clientMsgId);
 
         messagingTemplate.convertAndSend("/topic/thread/" + parentId, reply);

@@ -116,9 +116,16 @@ const ChatAppController = (() => {
             reconnectAttempts = 0;
             hideReconnectBanner();
             setSelfStatus('online');
+
+            // Every subscription tracked from a previous connection is now dead
+            // (this is a brand new STOMP session) — drop them so the re-subscribe
+            // calls below don't get skipped as "already subscribed".
+            subscriptions = {};
+
             if (activeConversationId) {
                 subscribeToConversation(activeConversationId);
             }
+            subscribeToAllConversationMessages();
 
             // Personal queue for friend request / acceptance / removal events
             stompClient.subscribe('/user/queue/friends', (msg) => {
@@ -210,41 +217,56 @@ const ChatAppController = (() => {
         if (!stompClient || !stompClient.connected) return;
 
         // Unsubscribe existing
-        if (subscriptions[`conv-${id}`]) {
-            subscriptions[`conv-${id}`].unsubscribe();
+        if (subscriptions[`typing-${id}`]) {
             subscriptions[`typing-${id}`].unsubscribe();
             subscriptions[`react-${id}`].unsubscribe();
             subscriptions[`readstate-${id}`]?.unsubscribe();
             subscriptions[`threadupdate-${id}`]?.unsubscribe();
         }
 
-        // 1. Message Subscription
-        subscriptions[`conv-${id}`] = stompClient.subscribe(`/topic/conversation/${id}`, (msg) => {
-            const message = JSON.parse(msg.body);
-            appendMessage(message);
-        });
+        // New messages are handled by subscribeToAllConversationMessages() for every
+        // conversation the user has, active or not — see there.
 
-        // 2. Typing Indicator Subscription
+        // 1. Typing Indicator Subscription
         subscriptions[`typing-${id}`] = stompClient.subscribe(`/topic/conversation/${id}/typing`, (msg) => {
             const typingEvent = JSON.parse(msg.body);
             showTypingIndicator(typingEvent);
         });
 
-        // 3. Reaction Subscription
+        // 2. Reaction Subscription
         subscriptions[`react-${id}`] = stompClient.subscribe(`/topic/conversation/${id}/reaction`, (msg) => {
             const reactionEvent = JSON.parse(msg.body);
             handleReactionUpdate(reactionEvent);
         });
 
-        // 4. Read-receipt tick updates (delivered / read)
+        // 3. Read-receipt tick updates (delivered / read)
         subscriptions[`readstate-${id}`] = stompClient.subscribe(`/topic/conversation/${id}/read-state`, (msg) => {
             handleReadStateEvent(JSON.parse(msg.body));
         });
 
-        // 5. Thread reply-count updates on the original message's badge
+        // 4. Thread reply-count updates on the original message's badge
         subscriptions[`threadupdate-${id}`] = stompClient.subscribe(`/topic/conversation/${id}/thread-update`, (msg) => {
             const evt = JSON.parse(msg.body);
             updateReplyCountBadge(evt.parentId, evt.replyCount);
+        });
+    }
+
+    // Subscribe to the message topic of every conversation the user is part of,
+    // not just the one currently open — otherwise a message landing in a chat
+    // you're not looking at is invisible until you happen to reopen it, and
+    // there's no way to play a notification sound for it. Safe to call
+    // repeatedly (e.g. after every loadConversations()); already-subscribed
+    // conversations are skipped.
+    function subscribeToAllConversationMessages() {
+        if (!stompClient || !stompClient.connected) return;
+
+        conversations.forEach(conv => {
+            const key = `msg-${conv.id}`;
+            if (subscriptions[key]) return;
+
+            subscriptions[key] = stompClient.subscribe(`/topic/conversation/${conv.id}`, (msg) => {
+                appendMessage(JSON.parse(msg.body));
+            });
         });
     }
 
@@ -397,6 +419,7 @@ const ChatAppController = (() => {
         conversations = await api('/api/conversations') || [];
         renderConversations();
         updateEmptyState();
+        subscribeToAllConversationMessages();
     }
 
     // SQL Server DATETIME2 serializes with up to 7 fractional-second digits
@@ -520,6 +543,12 @@ const ChatAppController = (() => {
     }
 
     function appendMessage(msg) {
+        // Not our own message, not a "X joined/left" system line, and not just the
+        // server echoing back a message we sent from another of our own tabs.
+        if (msg.senderId !== currentUser.id && msg.messageType !== 'SYSTEM') {
+            playMessageSound();
+        }
+
         if (msg.conversationId === activeConversationId) {
             // Optimistic UI updates matching
             if (msg.clientMsgId) {
@@ -2016,6 +2045,43 @@ const ChatAppController = (() => {
     function setupEmptyStateCta() {
         const btn = $('#btn-empty-find-people');
         if (btn) btn.addEventListener('click', focusSearch);
+    }
+
+    // ── Message Notification Sound ──
+    // Synthesized two-note chime via the Web Audio API (Messenger/Zalo-style
+    // "ding-ding") — no audio file to ship or license, and it plays instantly
+    // with zero network cost. Browsers only block audio before any user
+    // interaction; by the time messages arrive the user has already logged in,
+    // so the AudioContext is safe to create here.
+    let notificationAudioCtx = null;
+
+    function playMessageSound() {
+        try {
+            notificationAudioCtx = notificationAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+            if (notificationAudioCtx.state === 'suspended') {
+                notificationAudioCtx.resume();
+            }
+
+            const now = notificationAudioCtx.currentTime;
+            // [frequency, start delay] — a short rising two-note ping.
+            [[880, 0], [1318.5, 0.09]].forEach(([freq, delay]) => {
+                const osc = notificationAudioCtx.createOscillator();
+                const gain = notificationAudioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+
+                gain.gain.setValueAtTime(0, now + delay);
+                gain.gain.linearRampToValueAtTime(0.22, now + delay + 0.015);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.22);
+
+                osc.connect(gain);
+                gain.connect(notificationAudioCtx.destination);
+                osc.start(now + delay);
+                osc.stop(now + delay + 0.25);
+            });
+        } catch (e) {
+            // Web Audio unsupported/blocked — the sound is a nice-to-have, never worth breaking messaging over.
+        }
     }
 
     // ── Toast Notifications (replaces native alert()) ──

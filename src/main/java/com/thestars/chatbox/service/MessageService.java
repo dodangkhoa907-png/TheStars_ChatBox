@@ -106,10 +106,27 @@ public class MessageService {
     }
 
     /**
-     * Send a message, optionally as a reply within an existing thread.
+     * Send a message, optionally as a reply within an existing thread. Looks the
+     * sender up by id — prefer the {@link #sendMessage(Long, User, String, String, Long)}
+     * overload when the caller already has the User on hand (e.g. a WebSocket
+     * handler that already resolved the Principal), to skip a redundant query.
      */
     @Transactional
     public Message sendMessage(Long conversationId, Long senderId, String content, String messageType, Long parentId) {
+        return saveMessage(conversationId, userDAO.findById(senderId).orElse(null), senderId, content, messageType, parentId);
+    }
+
+    /**
+     * Send a message with an already-resolved sender — the hot path for real-time
+     * WebSocket sends, where {@code Principal} was already turned into a
+     * {@code User} before this is called, so there's no need to fetch it again.
+     */
+    @Transactional
+    public Message sendMessage(Long conversationId, User sender, String content, String messageType, Long parentId) {
+        return saveMessage(conversationId, sender, sender.getId(), content, messageType, parentId);
+    }
+
+    private Message saveMessage(Long conversationId, User sender, Long senderId, String content, String messageType, Long parentId) {
         Message message = Message.builder()
                 .conversationId(conversationId)
                 .senderId(senderId)
@@ -127,8 +144,7 @@ public class MessageService {
             messageDAO.incrementReplyCount(parentId);
         }
 
-        // Attach sender info for WebSocket broadcast
-        userDAO.findById(senderId).ifPresent(message::setSender);
+        message.setSender(sender);
 
         if ("TEXT".equals(message.getMessageType()) && content != null && content.contains("@")) {
             mentionService.processMentions(message);
@@ -140,10 +156,10 @@ public class MessageService {
     /**
      * Reply to an existing message within its thread.
      */
-    public Message replyInThread(Long parentId, Long senderId, String content) {
+    public Message replyInThread(Long parentId, User sender, String content) {
         Message parent = messageDAO.findById(parentId)
                 .orElseThrow(() -> new IllegalArgumentException("Parent message not found"));
-        return sendMessage(parent.getConversationId(), senderId, content, "TEXT", parentId);
+        return sendMessage(parent.getConversationId(), sender, content, "TEXT", parentId);
     }
 
     /**
