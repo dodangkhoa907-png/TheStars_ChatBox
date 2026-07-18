@@ -21,6 +21,7 @@ const ChatAppController = (() => {
     let typingTimeout = null;
     let typingIndicatorTimeout = null;
     let lastTypingSent = 0;
+    let mentionCandidates = [];
 
     const TYPING_DEBOUNCE = 1000;
     const TYPING_INDICATOR_DURATION = 3000;
@@ -35,8 +36,8 @@ const ChatAppController = (() => {
         }
         
         const res = await fetch(fullUrl, {
-            headers: headers,
-            ...options
+            ...options,
+            headers: headers
         });
         if (res.status === 401 || res.status === 403) {
             sessionStorage.removeItem('chat_token');
@@ -80,18 +81,28 @@ const ChatAppController = (() => {
         setupGroupCreation();
         setupBrowseGroups();
         setupFriendsPanel();
+        setupNotificationsPanel();
         setupEmptyStateCta();
         setupInputHandlers();
+        setupPresenceTracking();
+        setupThreadInput();
+        setupMentionAutocomplete();
+        setupGroupMembership();
 
         // Load initial conversations
         await loadConversations();
         refreshFriendsBadgeCount();
+        refreshNotificationsBadge();
 
         // Connect STOMP WebSocket
         connectWebSocket();
     }
 
     // ── WebSocket Connection (SockJS + STOMP) ──
+    let reconnectAttempts = 0;
+    const RECONNECT_BASE_MS = 1000;
+    const RECONNECT_MAX_MS = 30000;
+
     function connectWebSocket() {
         setSelfStatus('connecting');
 
@@ -102,6 +113,8 @@ const ChatAppController = (() => {
 
         stompClient.connect({}, (frame) => {
             console.log('[WS] Connected successfully');
+            reconnectAttempts = 0;
+            hideReconnectBanner();
             setSelfStatus('online');
             if (activeConversationId) {
                 subscribeToConversation(activeConversationId);
@@ -116,11 +129,64 @@ const ChatAppController = (() => {
             stompClient.subscribe('/topic/presence', (msg) => {
                 handlePresenceEvent(JSON.parse(msg.body));
             });
+
+            // Personal queue for @mention notifications
+            stompClient.subscribe('/user/queue/notifications', (msg) => {
+                handleNotificationEvent(JSON.parse(msg.body));
+            });
         }, (error) => {
-            console.error('[WS] Connection error, reconnecting in 5s...', error);
+            console.error('[WS] Connection error', error);
             setSelfStatus('offline');
-            setTimeout(connectWebSocket, 5000);
+            scheduleReconnect();
         });
+    }
+
+    function scheduleReconnect() {
+        const delay = Math.min(RECONNECT_BASE_MS * 2 ** reconnectAttempts, RECONNECT_MAX_MS);
+        const jitter = delay * 0.2 * Math.random();
+        reconnectAttempts++;
+        showReconnectBanner(Math.round((delay + jitter) / 1000));
+        setTimeout(connectWebSocket, delay + jitter);
+    }
+
+    function showReconnectBanner(seconds) {
+        const banner = $('#reconnect-banner');
+        if (!banner) return;
+        banner.textContent = `Đang mất kết nối. Thử lại sau ${seconds}s...`;
+        banner.classList.remove('hidden');
+    }
+
+    function hideReconnectBanner() {
+        $('#reconnect-banner')?.classList.add('hidden');
+    }
+
+    // ── Heartbeat & Idle Tracking ──
+    const IDLE_THRESHOLD_MS = 300_000; // 5 minutes
+    const HEARTBEAT_INTERVAL_MS = 30_000;
+    let lastActiveTime = Date.now();
+    let isIdle = false;
+
+    function setupPresenceTracking() {
+        ['mousemove', 'keydown'].forEach(evt => {
+            document.addEventListener(evt, () => {
+                lastActiveTime = Date.now();
+                if (isIdle) {
+                    isIdle = false;
+                    if (stompClient?.connected) stompClient.send('/app/presence.active', {}, '{}');
+                }
+            });
+        });
+
+        setInterval(() => {
+            if (stompClient?.connected) stompClient.send('/app/presence.ping', {}, '{}');
+        }, HEARTBEAT_INTERVAL_MS);
+
+        setInterval(() => {
+            if (!isIdle && Date.now() - lastActiveTime > IDLE_THRESHOLD_MS && stompClient?.connected) {
+                isIdle = true;
+                stompClient.send('/app/presence.idle', {}, '{}');
+            }
+        }, HEARTBEAT_INTERVAL_MS);
     }
 
     // Our own status is only truly known by whether our WebSocket is actually
@@ -148,6 +214,8 @@ const ChatAppController = (() => {
             subscriptions[`conv-${id}`].unsubscribe();
             subscriptions[`typing-${id}`].unsubscribe();
             subscriptions[`react-${id}`].unsubscribe();
+            subscriptions[`readstate-${id}`]?.unsubscribe();
+            subscriptions[`threadupdate-${id}`]?.unsubscribe();
         }
 
         // 1. Message Subscription
@@ -166,6 +234,17 @@ const ChatAppController = (() => {
         subscriptions[`react-${id}`] = stompClient.subscribe(`/topic/conversation/${id}/reaction`, (msg) => {
             const reactionEvent = JSON.parse(msg.body);
             handleReactionUpdate(reactionEvent);
+        });
+
+        // 4. Read-receipt tick updates (delivered / read)
+        subscriptions[`readstate-${id}`] = stompClient.subscribe(`/topic/conversation/${id}/read-state`, (msg) => {
+            handleReadStateEvent(JSON.parse(msg.body));
+        });
+
+        // 5. Thread reply-count updates on the original message's badge
+        subscriptions[`threadupdate-${id}`] = stompClient.subscribe(`/topic/conversation/${id}/thread-update`, (msg) => {
+            const evt = JSON.parse(msg.body);
+            updateReplyCountBadge(evt.parentId, evt.replyCount);
         });
     }
 
@@ -320,21 +399,42 @@ const ChatAppController = (() => {
         updateEmptyState();
     }
 
+    // SQL Server DATETIME2 serializes with up to 7 fractional-second digits
+    // (e.g. "2026-07-18T03:31:00.1234567"), which Date.parse() doesn't reliably
+    // handle (ISO 8601 milliseconds are 3 digits) — browsers disagree on what to
+    // do with the extra digits, producing subtly wrong ordering. Truncate to 3
+    // before parsing so every timestamp compares consistently.
+    function parseServerDate(raw) {
+        if (!raw) return 0;
+        const normalized = raw.replace(/(\.\d{3})\d+$/, '$1');
+        const time = new Date(normalized).getTime();
+        return Number.isNaN(time) ? 0 : time;
+    }
+
+    // Most recent activity first — the conversation's own updated_at (exactly what
+    // the backend already orders by), falling back to the last message's time.
+    function conversationActivityTime(conv) {
+        return parseServerDate(conv.updatedAt) || parseServerDate(conv.lastMessage?.createdAt);
+    }
+
     function renderConversations() {
-        const listNew = $('#chat-list-new');
-        const listLast = $('#chat-list-last');
-        if (!listNew || !listLast) return;
+        const list = $('#chat-list');
+        if (!list) return;
 
-        listNew.innerHTML = '';
-        listLast.innerHTML = '';
+        list.innerHTML = '';
 
-        conversations.forEach(conv => {
+        const sorted = [...conversations].sort((a, b) => conversationActivityTime(b) - conversationActivityTime(a));
+
+        sorted.forEach(conv => {
             const li = document.createElement('li');
             li.dataset.id = conv.id;
             if (activeConversationId === conv.id) {
                 li.className = 'active';
             }
 
+            if (conv.unreadCount > 0) {
+                li.classList.add('has-unread');
+            }
             const unreadBadge = conv.unreadCount > 0 ? `<span class="unread-badge">${conv.unreadCount}</span>` : '';
             const statusClass = presenceDotClass(conv);
             const lastMsgText = conv.lastMessage ? conv.lastMessage.content : 'No messages yet';
@@ -357,20 +457,14 @@ const ChatAppController = (() => {
 
             li.addEventListener('click', () => selectConversation(conv.id));
 
-            if (conv.unreadCount > 0) {
-                listNew.appendChild(li);
-            } else {
-                listLast.appendChild(li);
-            }
+            list.appendChild(li);
         });
-
-        // Hide section headers if empty
-        $('#section-new').style.display = listNew.children.length > 0 ? 'block' : 'none';
     }
 
     // ── Select Conversation ──
     async function selectConversation(id) {
         activeConversationId = id;
+        closeThread();
 
         const dashboard = $('.dashboard');
         if (dashboard) {
@@ -400,6 +494,7 @@ const ChatAppController = (() => {
         subscribeToConversation(id);
         await loadMessages(id);
         await loadResources(id);
+        await loadMembers(id);
 
         // Mark as read
         api(`/api/conversations/${id}/read`, { method: 'POST' });
@@ -439,15 +534,28 @@ const ChatAppController = (() => {
             appendMessageHtml(msg);
             scrollToBottom();
             hideTypingIndicatorDirect();
+
+            // Acknowledge live delivery — only for messages from someone else
+            if (msg.senderId !== currentUser.id && msg.id && stompClient?.connected) {
+                stompClient.send('/app/chat.delivered', {}, JSON.stringify({ messageId: msg.id }));
+            }
         }
-        
+
         // Refresh conversations list to update preview
         loadConversations();
     }
 
-    function appendMessageHtml(msg) {
-        const scrollContainer = $('#messages-scroll');
+    function appendMessageHtml(msg, container, inThread) {
+        const scrollContainer = container || $('#messages-scroll');
         if (!scrollContainer) return;
+
+        if (msg.messageType === 'SYSTEM') {
+            const div = document.createElement('div');
+            div.className = 'system-message';
+            div.textContent = msg.content;
+            scrollContainer.appendChild(div);
+            return;
+        }
 
         const isSelf = msg.senderId === currentUser.id;
         const msgDiv = document.createElement('div');
@@ -496,7 +604,7 @@ const ChatAppController = (() => {
             bubbleContent = `
                 <div class="msg__bubble">
                     <div class="msg__sender">${escapeHtml(msg.sender?.displayName)}</div>
-                    <div>${escapeHtml(msg.content)}</div>
+                    <div class="msg__rich-text">${renderRichText(highlightMentions(msg.content))}</div>
                 </div>
             `;
         }
@@ -515,12 +623,10 @@ const ChatAppController = (() => {
 
         let statusHtml = '';
         if (isSelf) {
-            if (msg.isPending) {
-                statusHtml = `<span class="msg__status status--sending" style="font-size: 10px; color: #fbbf24; margin-left: 6px; font-weight: 500;">Sending...</span>`;
-            } else {
-                statusHtml = `<span class="msg__status status--sent" style="font-size: 10px; color: #10b981; margin-left: 6px; font-weight: 500;">Sent</span>`;
-            }
+            statusHtml = renderTickHtml(msg);
         }
+
+        const threadRowHtml = (msg.id && !inThread) ? renderThreadButtonHtml(msg) : '';
 
         msgDiv.innerHTML = `
             ${!isSelf ? `<img src="${avatarUrl}" alt="Avatar" class="msg__avatar">` : ''}
@@ -528,6 +634,7 @@ const ChatAppController = (() => {
                 ${bubbleContent}
                 <div class="msg__time">${timeStr} ${statusHtml}</div>
                 ${reactionsHtml}
+                ${threadRowHtml}
             </div>
         `;
 
@@ -543,9 +650,25 @@ const ChatAppController = (() => {
             msgDiv.querySelector('.msg__bubble')?.addEventListener('dblclick', () => {
                 toggleReaction(msg.id, '👍');
             });
+
+            if (!inThread) {
+                msgDiv.querySelector('.msg__thread-btn')?.addEventListener('click', () => openThread(msg));
+            }
         }
 
         scrollContainer.appendChild(msgDiv);
+        enhanceCodeBlocks(msgDiv);
+    }
+
+    function renderThreadButtonHtml(msg) {
+        const count = msg.replyCount || 0;
+        const label = count > 0 ? `<span>${count} ${count === 1 ? 'reply' : 'replies'}</span>` : '';
+        return `
+            <button class="msg__thread-btn ${count > 0 ? 'has-replies' : ''}" type="button" title="Reply in thread">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                ${label}
+            </button>
+        `;
     }
 
     function updatePendingMessage(el, msg) {
@@ -555,12 +678,11 @@ const ChatAppController = (() => {
         delete el.dataset.clientMsgId;
         el.dataset.messageId = msg.id;
 
-        // Update time and status label
+        // Update time and tick status
         const timeEl = el.querySelector('.msg__time');
         if (timeEl) {
             const timeStr = formatTime(msg.createdAt);
-            const statusHtml = `<span class="msg__status status--sent" style="font-size: 10px; color: #10b981; margin-left: 6px; font-weight: 500;">Sent</span>`;
-            timeEl.innerHTML = `${timeStr} ${statusHtml}`;
+            timeEl.innerHTML = `${timeStr} ${renderTickHtml(msg)}`;
         }
 
         // Attach reaction click handlers
@@ -577,7 +699,206 @@ const ChatAppController = (() => {
         }
     }
 
+    // ── Read Receipts (4-state ticks) ──
+    function renderTickHtml(msg) {
+        if (msg.isPending) {
+            return `<span class="msg__status"><span class="tick tick--sending">◌</span></span>`;
+        }
+        const state = msg.readState || 'SENT';
+        if (state === 'READ') return `<span class="msg__status"><span class="tick tick--read">✓✓</span></span>`;
+        if (state === 'DELIVERED') return `<span class="msg__status"><span class="tick tick--delivered">✓✓</span></span>`;
+        return `<span class="msg__status"><span class="tick tick--sent">✓</span></span>`;
+    }
+
+    function handleReadStateEvent(evt) {
+        if (evt.type === 'MESSAGE_DELIVERED') {
+            updateMessageTick(evt.messageId, 'DELIVERED');
+        } else if (evt.type === 'CONVERSATION_READ') {
+            if (evt.readerId === currentUser.id) return; // reading your own messages doesn't count
+            $$('.msg--self[data-message-id]').forEach(el => updateTickElement(el, 'READ'));
+        }
+    }
+
+    function updateMessageTick(messageId, state) {
+        const el = document.querySelector(`.msg[data-message-id="${messageId}"]`);
+        if (el) updateTickElement(el, state);
+    }
+
+    function updateTickElement(el, state) {
+        const statusEl = el.querySelector('.msg__status');
+        if (!statusEl) return;
+        // Never downgrade — a message already marked READ stays READ even if a
+        // stale DELIVERED event arrives out of order.
+        if (statusEl.querySelector('.tick--read') && state !== 'READ') return;
+
+        const icons = { DELIVERED: ['tick--delivered', '✓✓'], READ: ['tick--read', '✓✓'] };
+        const [cls, glyph] = icons[state] || ['tick--sent', '✓'];
+        statusEl.innerHTML = `<span class="tick ${cls}">${glyph}</span>`;
+    }
+
+    // ── Threads ──
+    let activeThreadParentId = null;
+    let threadSubscription = null;
+
+    function setupThreadInput() {
+        const input = $('#thread-input');
+        const sendBtn = $('#btn-thread-send');
+        const btnClose = $('#btn-close-thread');
+
+        function sendThreadReply() {
+            if (!input || !activeThreadParentId || !stompClient?.connected) return;
+            const text = input.value.trim();
+            if (!text) return;
+
+            stompClient.send(`/app/chat.replyThread/${activeThreadParentId}`, {}, JSON.stringify({ content: text }));
+            input.value = '';
+        }
+
+        if (sendBtn) sendBtn.addEventListener('click', sendThreadReply);
+        if (input) {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    sendThreadReply();
+                }
+            });
+        }
+        if (btnClose) btnClose.addEventListener('click', closeThread);
+    }
+
+    async function openThread(parentMessage) {
+        if (!parentMessage.id) return;
+        activeThreadParentId = parentMessage.id;
+        $('#col-thread')?.classList.remove('hidden');
+
+        const data = await api(`/api/conversations/${activeConversationId}/messages/${parentMessage.id}/thread`);
+        if (!data || activeThreadParentId !== parentMessage.id) return;
+
+        renderThreadParent(data.parent);
+        const container = $('#thread-messages');
+        if (container) {
+            container.innerHTML = '';
+            data.replies.forEach(reply => appendMessageHtml(reply, container, true));
+            container.scrollTop = container.scrollHeight;
+        }
+
+        subscribeToThread(parentMessage.id);
+        $('#thread-input')?.focus();
+    }
+
+    function closeThread() {
+        $('#col-thread')?.classList.add('hidden');
+        threadSubscription?.unsubscribe();
+        threadSubscription = null;
+        activeThreadParentId = null;
+    }
+
+    function subscribeToThread(parentId) {
+        if (!stompClient?.connected) return;
+        threadSubscription?.unsubscribe();
+        threadSubscription = stompClient.subscribe(`/topic/thread/${parentId}`, (msg) => {
+            const reply = JSON.parse(msg.body);
+            if (activeThreadParentId !== parentId) return;
+
+            const container = $('#thread-messages');
+            if (!container) return;
+
+            if (reply.clientMsgId) {
+                const pendingEl = container.querySelector(`.msg[data-client-msg-id="${reply.clientMsgId}"]`);
+                if (pendingEl) { updatePendingMessage(pendingEl, reply); return; }
+            }
+            appendMessageHtml(reply, container, true);
+            container.scrollTop = container.scrollHeight;
+        });
+    }
+
+    function renderThreadParent(parent) {
+        const el = $('#thread-parent');
+        if (!el || !parent) return;
+
+        const avatarUrl = parent.sender?.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(parent.sender?.displayName || 'User');
+        el.innerHTML = `
+            <div class="thread-parent__meta">
+                <img src="${avatarUrl}" alt="">
+                <span class="thread-parent__name">${escapeHtml(parent.sender?.displayName || 'Unknown')}</span>
+                <span class="thread-parent__time">${formatTime(parent.createdAt)}</span>
+            </div>
+            <div class="thread-parent__content">${renderRichText(highlightMentions(parent.content || ''))}</div>
+        `;
+        enhanceCodeBlocks(el);
+    }
+
+    function updateReplyCountBadge(messageId, count) {
+        const msgDiv = document.querySelector(`.msg[data-message-id="${messageId}"]`);
+        const btn = msgDiv?.querySelector('.msg__thread-btn');
+        if (!btn) return;
+
+        btn.classList.add('has-replies');
+        btn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            <span>${count} ${count === 1 ? 'reply' : 'replies'}</span>
+        `;
+    }
+
     // ── Input & Send Handlers ──
+    // ── @Mention autocomplete in the composer ──
+    function setupMentionAutocomplete() {
+        const input = $('#msg-input');
+        const dropdown = $('#mention-dropdown');
+        if (!input || !dropdown) return;
+
+        input.addEventListener('input', () => {
+            const caret = input.selectionStart;
+            const textBeforeCaret = input.value.slice(0, caret);
+            const match = textBeforeCaret.match(/@(\w*)$/u);
+
+            if (!match || mentionCandidates.length === 0) {
+                dropdown.classList.add('hidden');
+                return;
+            }
+
+            const query = match[1].toLowerCase();
+            const matches = mentionCandidates
+                .filter(u => u.displayName.toLowerCase().replace(/\s/g, '').includes(query))
+                .slice(0, 5);
+
+            if (matches.length === 0) {
+                dropdown.classList.add('hidden');
+                return;
+            }
+
+            dropdown.innerHTML = '';
+            matches.forEach(u => {
+                const item = document.createElement('div');
+                item.className = 'mention-suggestion';
+                item.innerHTML = `
+                    <img src="${u.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(u.displayName)}" alt="">
+                    <span>${escapeHtml(u.displayName)}</span>
+                `;
+                // mousedown (not click) fires before the input loses focus/blur
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    const handle = u.displayName.replace(/\s/g, '');
+                    const before = textBeforeCaret.slice(0, match.index);
+                    const after = input.value.slice(caret);
+                    input.value = `${before}@${handle} ${after}`;
+
+                    const newCaret = (before + '@' + handle + ' ').length;
+                    input.focus();
+                    input.setSelectionRange(newCaret, newCaret);
+                    dropdown.classList.add('hidden');
+                });
+                dropdown.appendChild(item);
+            });
+
+            dropdown.classList.remove('hidden');
+        });
+
+        input.addEventListener('blur', () => {
+            setTimeout(() => dropdown.classList.add('hidden'), 150);
+        });
+    }
+
     function setupInputHandlers() {
         const input = $('#msg-input');
         const sendBtn = $('#btn-send');
@@ -764,6 +1085,215 @@ const ChatAppController = (() => {
             `;
             fileList.appendChild(li);
         });
+    }
+
+    // ── Members List (group conversations only) ──
+    const ROLE_LABELS = { OWNER: 'Owner', DEPUTY: 'Deputy', MEMBER: 'Member' };
+    let activeGroupDetail = null; // last-loaded full conversation detail, for the Leave Group flow
+
+    async function loadMembers(conversationId) {
+        const section = $('#members-section');
+        const list = $('#members-list');
+        const leaveBtn = $('#btn-leave-group');
+        if (!section || !list) return;
+
+        const conv = conversations.find(c => c.id === conversationId);
+        if (!conv || conv.type !== 'GROUP') {
+            section.classList.add('hidden');
+            leaveBtn?.classList.add('hidden');
+            activeGroupDetail = null;
+            // Still usable for @mentions even in a 1-1 chat — just the other person
+            mentionCandidates = conv?.otherUserId
+                ? [{ id: conv.otherUserId, displayName: conv.name, avatar: conv.avatar }]
+                : [];
+            return;
+        }
+
+        const full = await api(`/api/conversations/${conversationId}`);
+        if (!full || !full.participants) return;
+        activeGroupDetail = full;
+
+        mentionCandidates = full.participants
+            .map(p => p.user)
+            .filter(u => u && u.id !== currentUser.id);
+
+        section.classList.remove('hidden');
+        leaveBtn?.classList.remove('hidden');
+        $('#badge-members').textContent = full.participants.length;
+        list.innerHTML = '';
+
+        const myRole = full.currentUserRole;
+
+        full.participants.forEach(participant => {
+            const member = participant.user;
+            if (!member) return;
+
+            const li = document.createElement('li');
+            li.className = 'friend-item';
+            li.innerHTML = `
+                <div class="friend-item__info">
+                    <img src="${member.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(member.displayName)}" alt="">
+                    <div>
+                        <div class="friend-item__name">${escapeHtml(member.displayName)}</div>
+                        <div class="friend-item__sub">${ROLE_LABELS[participant.role] || 'Member'}</div>
+                    </div>
+                </div>
+            `;
+
+            const canKick = member.id !== currentUser.id &&
+                (myRole === 'OWNER' || (myRole === 'DEPUTY' && participant.role === 'MEMBER'));
+
+            if (member.id !== currentUser.id && (canKick || myRole === 'OWNER')) {
+                li.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    const items = [];
+                    if (myRole === 'OWNER') {
+                        if (participant.role === 'MEMBER') {
+                            items.push({ label: 'Promote to Deputy', onClick: () => promoteMember(conversationId, member.id, member.displayName) });
+                        }
+                        if (participant.role === 'DEPUTY') {
+                            items.push({ label: 'Demote to Member', onClick: () => demoteMember(conversationId, member.id, member.displayName) });
+                        }
+                        items.push({ label: 'Make Group Owner', onClick: () => transferOwnershipTo(conversationId, member.id, member.displayName) });
+                    }
+                    if (canKick) {
+                        items.push({ label: 'Kick', onClick: () => kickMember(conversationId, member.id, member.displayName) });
+                    }
+                    if (items.length) showContextMenu(e.clientX, e.clientY, items);
+                });
+            }
+
+            list.appendChild(li);
+        });
+    }
+
+    async function kickMember(conversationId, userId, displayName) {
+        if (await api(`/api/conversations/${conversationId}/participants/${userId}`, { method: 'DELETE' })) {
+            showToast(`Removed ${displayName} from the group.`, 'info');
+            loadMembers(conversationId);
+        } else {
+            showToast('Could not remove this member. Please try again.', 'error');
+        }
+    }
+
+    async function promoteMember(conversationId, userId, displayName) {
+        if (await api(`/api/conversations/${conversationId}/participants/${userId}/promote`, { method: 'POST' })) {
+            showToast(`${displayName} is now a deputy.`, 'success');
+            loadMembers(conversationId);
+        } else {
+            showToast('Could not promote this member. Please try again.', 'error');
+        }
+    }
+
+    async function demoteMember(conversationId, userId, displayName) {
+        if (await api(`/api/conversations/${conversationId}/participants/${userId}/demote`, { method: 'POST' })) {
+            showToast(`${displayName} is now a member.`, 'success');
+            loadMembers(conversationId);
+        } else {
+            showToast('Could not demote this member. Please try again.', 'error');
+        }
+    }
+
+    async function transferOwnershipTo(conversationId, userId, displayName) {
+        if (!confirm(`Make ${displayName} the group owner? You'll become a deputy.`)) return;
+        if (await api(`/api/conversations/${conversationId}/transfer-ownership`, { method: 'POST', body: JSON.stringify({ newOwnerId: userId }) })) {
+            showToast(`${displayName} is now the group owner.`, 'success');
+            loadMembers(conversationId);
+        } else {
+            showToast('Could not transfer ownership. Please try again.', 'error');
+        }
+    }
+
+    // ── Leave Group (Zalo-style: owner must hand off leadership first) ──
+    function setupGroupMembership() {
+        const leaveBtn = $('#btn-leave-group');
+        const modal = $('#modal-transfer-leave');
+        const candidatesList = $('#transfer-candidates');
+        const closeBtn = $('#btn-close-transfer-modal');
+        const cancelBtn = $('#btn-transfer-modal-cancel');
+
+        leaveBtn?.addEventListener('click', async () => {
+            if (!activeConversationId || !activeGroupDetail) return;
+
+            const others = (activeGroupDetail.participants || []).filter(p => p.user?.id !== currentUser.id);
+
+            if (activeGroupDetail.currentUserRole !== 'OWNER') {
+                if (!confirm('Leave this group?')) return;
+                await doLeaveGroup(activeConversationId, null);
+                return;
+            }
+
+            if (others.length === 0) {
+                if (!confirm('You are the last member — leaving will delete this group. Continue?')) return;
+                await doLeaveGroup(activeConversationId, null);
+                return;
+            }
+
+            // Owner with other members present: must pick a successor first.
+            candidatesList.innerHTML = '';
+            others
+                .slice()
+                .sort((a, b) => (a.role === 'DEPUTY' ? -1 : 0) - (b.role === 'DEPUTY' ? -1 : 0))
+                .forEach(p => {
+                    const member = p.user;
+                    const row = document.createElement('li');
+                    row.className = 'member-result';
+                    row.innerHTML = `
+                        <img src="${member.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(member.displayName)}" alt="">
+                        <span>${escapeHtml(member.displayName)} <span style="opacity:0.5; font-size:11px;">(${ROLE_LABELS[p.role] || 'Member'})</span></span>
+                    `;
+                    row.addEventListener('click', async () => {
+                        modal.classList.add('hidden');
+                        await doLeaveGroup(activeConversationId, member.id);
+                    });
+                    candidatesList.appendChild(row);
+                });
+            modal.classList.remove('hidden');
+        });
+
+        closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
+        cancelBtn?.addEventListener('click', () => modal.classList.add('hidden'));
+    }
+
+    async function doLeaveGroup(conversationId, newOwnerId) {
+        const result = await api(`/api/conversations/${conversationId}/leave`, {
+            method: 'POST',
+            body: JSON.stringify(newOwnerId ? { newOwnerId } : {})
+        });
+        if (result) {
+            showToast('You left the group.', 'info');
+            activeConversationId = null;
+            $('#col-resources')?.classList.add('hidden');
+            $('#chat-header')?.classList.add('hidden');
+            $('#chat-messages')?.classList.add('hidden');
+            $('#chat-footer')?.classList.add('hidden');
+            $('#chat-empty')?.classList.remove('hidden');
+            loadConversations();
+        } else {
+            showToast('Could not leave the group. Please try again.', 'error');
+        }
+    }
+
+    // ── Generic Context Menu (right-click actions) ──
+    function showContextMenu(x, y, items) {
+        document.querySelector('.context-menu')?.remove();
+
+        const menu = document.createElement('div');
+        menu.className = 'context-menu';
+        items.forEach(item => {
+            const row = document.createElement('button');
+            row.textContent = item.label;
+            row.addEventListener('click', () => { item.onClick(); menu.remove(); });
+            menu.appendChild(row);
+        });
+        document.body.appendChild(menu);
+
+        // Keep the menu on-screen if it would overflow the right/bottom edge
+        const rect = menu.getBoundingClientRect();
+        menu.style.left = Math.min(x, window.innerWidth - rect.width - 8) + 'px';
+        menu.style.top = Math.min(y, window.innerHeight - rect.height - 8) + 'px';
+
+        setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }));
     }
 
     // ── Admin Panel Content Loading ──
@@ -1161,6 +1691,87 @@ const ChatAppController = (() => {
         });
     }
 
+    // ── Notifications Popover (@mentions) — same floating-card pattern as Friends ──
+    function setupNotificationsPanel() {
+        const btnOpen = $('#btn-open-notifications');
+        const popover = $('#notifications-overlay');
+        const btnClose = $('#btn-close-notifications');
+        if (!btnOpen || !popover) return;
+
+        const closePopover = () => popover.classList.add('hidden');
+
+        const openPopover = () => {
+            const rect = btnOpen.getBoundingClientRect();
+            popover.style.top = (rect.bottom + 8) + 'px';
+            popover.style.left = Math.max(14, rect.right - 340) + 'px';
+
+            popover.classList.remove('hidden');
+            loadNotifications();
+        };
+
+        btnOpen.addEventListener('click', (e) => {
+            e.stopPropagation();
+            popover.classList.contains('hidden') ? openPopover() : closePopover();
+        });
+        btnClose?.addEventListener('click', closePopover);
+
+        document.addEventListener('click', (e) => {
+            if (!popover.classList.contains('hidden') &&
+                !popover.contains(e.target) && e.target !== btnOpen) {
+                closePopover();
+            }
+        });
+        popover.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    async function loadNotifications() {
+        const notifications = await api('/api/notifications') || [];
+        const list = $('#notifications-list');
+        if (!list) return;
+
+        list.innerHTML = '';
+        if (notifications.length === 0) {
+            list.innerHTML = '<li class="friend-item__empty"><p>No notifications yet.</p></li>';
+        } else {
+            notifications.forEach(n => {
+                const li = document.createElement('li');
+                li.className = `notification-item ${n.read ? '' : 'notification-item--unread'}`;
+                li.innerHTML = `
+                    <div class="notification-item__content">${escapeHtml(n.content)}</div>
+                    <div class="notification-item__time">${formatTime(n.createdAt)}</div>
+                `;
+                li.addEventListener('click', async () => {
+                    if (!n.read) await api(`/api/notifications/${n.id}/read`, { method: 'POST' });
+                    $('#notifications-overlay')?.classList.add('hidden');
+                    if (n.conversationId) {
+                        await loadConversations();
+                        selectConversation(n.conversationId);
+                    }
+                    refreshNotificationsBadge();
+                });
+                list.appendChild(li);
+            });
+        }
+
+        refreshNotificationsBadge();
+    }
+
+    async function refreshNotificationsBadge() {
+        const data = await api('/api/notifications/unread-count');
+        const dot = $('#notifications-badge-dot');
+        if (dot) dot.classList.toggle('hidden', !data || data.count === 0);
+    }
+
+    function handleNotificationEvent(evt) {
+        showToast(evt.content, 'info');
+        refreshNotificationsBadge();
+
+        const overlay = $('#notifications-overlay');
+        if (overlay && !overlay.classList.contains('hidden')) {
+            loadNotifications();
+        }
+    }
+
     async function loadFriends() {
         const [friends, incoming, outgoing] = await Promise.all([
             api('/api/friends'),
@@ -1490,6 +2101,55 @@ const ChatAppController = (() => {
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+    }
+
+    // ── Rich Text (Markdown + code blocks) & @Mentions ──
+    function highlightMentions(text) {
+        if (!text) return text;
+        // Wrap @Name so it survives markdown parsing as a styled span; matches the
+        // same "@word" pattern the backend's MentionService parses independently.
+        return text.replace(/@(\w+)/g, '@<span class="mention">$1</span>');
+    }
+
+    function renderRichText(content) {
+        if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+            return escapeHtml(content);
+        }
+        const rawHtml = marked.parse(content || '', { breaks: true });
+        return DOMPurify.sanitize(rawHtml, {
+            ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'pre', 'ul', 'ol', 'li', 'a', 'blockquote', 'del', 'span'],
+            ALLOWED_ATTR: ['href', 'class']
+        });
+    }
+
+    function enhanceCodeBlocks(container) {
+        if (typeof hljs === 'undefined') return;
+        container.querySelectorAll('pre code').forEach(block => {
+            hljs.highlightElement(block);
+            if (block.parentElement.querySelector('.code-copy-btn')) return;
+
+            block.parentElement.style.position = 'relative';
+
+            // marked.js sets class="language-xxx" from the fence (```js); show it as a small label
+            const langMatch = block.className.match(/language-(\w+)/);
+            if (langMatch) {
+                const label = document.createElement('span');
+                label.className = 'code-lang-label';
+                label.textContent = langMatch[1];
+                block.parentElement.appendChild(label);
+            }
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'code-copy-btn';
+            btn.textContent = 'Copy';
+            btn.addEventListener('click', () => {
+                navigator.clipboard.writeText(block.textContent);
+                btn.textContent = 'Copied';
+                setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+            });
+            block.parentElement.appendChild(btn);
+        });
     }
 
     function scrollToBottom() {

@@ -1,5 +1,6 @@
 package com.thestars.chatbox.controller;
 
+import com.thestars.chatbox.config.PresenceTracker;
 import com.thestars.chatbox.model.Message;
 import com.thestars.chatbox.model.User;
 import com.thestars.chatbox.service.ChatService;
@@ -30,13 +31,16 @@ public class MessageController {
     private final ChatService chatService;
     private final UserService userService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final PresenceTracker presenceTracker;
 
     public MessageController(MessageService messageService, ChatService chatService,
-                             UserService userService, SimpMessagingTemplate messagingTemplate) {
+                             UserService userService, SimpMessagingTemplate messagingTemplate,
+                             PresenceTracker presenceTracker) {
         this.messageService = messageService;
         this.chatService = chatService;
         this.userService = userService;
         this.messagingTemplate = messagingTemplate;
+        this.presenceTracker = presenceTracker;
     }
 
     /**
@@ -143,5 +147,106 @@ public class MessageController {
                 "/topic/conversation/" + conversationId + "/reaction",
                 reactionEvent
         );
+    }
+
+    /**
+     * Reply to a message inside its thread.
+     *
+     * Client sends to: /app/chat.replyThread/{parentId}
+     * Server broadcasts the reply to: /topic/thread/{parentId}
+     * Server broadcasts the updated reply count to: /topic/conversation/{conversationId}/thread-update
+     */
+    @MessageMapping("/chat.replyThread/{parentId}")
+    public void replyInThread(@DestinationVariable Long parentId,
+                              @Payload Map<String, String> payload,
+                              Principal principal) {
+        if (principal == null) return;
+        User sender = userService.findByEmail(principal.getName()).orElse(null);
+        if (sender == null) return;
+
+        Message parent = messageService.findById(parentId).orElse(null);
+        if (parent == null) return;
+        if (!chatService.isParticipant(parent.getConversationId(), sender.getId())) {
+            log.warn("User {} is not a participant of conversation {}", sender.getId(), parent.getConversationId());
+            return;
+        }
+
+        String content = payload.get("content");
+        String clientMsgId = payload.get("clientMsgId");
+
+        Message reply = messageService.replyInThread(parentId, sender.getId(), content);
+        reply.setClientMsgId(clientMsgId);
+
+        messagingTemplate.convertAndSend("/topic/thread/" + parentId, reply);
+        messagingTemplate.convertAndSend("/topic/conversation/" + parent.getConversationId() + "/thread-update",
+                Map.of("parentId", parentId, "replyCount", parent.getReplyCount() + 1));
+    }
+
+    /**
+     * A recipient's client confirms it received a message live over the socket
+     * (as opposed to loading it later via history) — the "Delivered" tick state.
+     *
+     * Client sends to: /app/chat.delivered
+     */
+    @MessageMapping("/chat.delivered")
+    public void markDelivered(@Payload Map<String, Object> payload, Principal principal) {
+        if (principal == null) return;
+        User user = userService.findByEmail(principal.getName()).orElse(null);
+        if (user == null) return;
+
+        Long messageId = ((Number) payload.get("messageId")).longValue();
+        Long conversationId = messageService.markDelivered(messageId, user.getId());
+        if (conversationId == null) return;
+
+        messagingTemplate.convertAndSend("/topic/conversation/" + conversationId + "/read-state",
+                Map.of("type", "MESSAGE_DELIVERED", "messageId", messageId));
+    }
+
+    /**
+     * Heartbeat — client pings every 30s while connected. {@link com.thestars.chatbox.config.PresenceSweepJob}
+     * flips a user OFFLINE if this stops arriving, catching disconnects that never send a clean close frame.
+     *
+     * Client sends to: /app/presence.ping
+     */
+    @MessageMapping("/presence.ping")
+    public void ping(Principal principal) {
+        if (principal != null) {
+            presenceTracker.touch(principal.getName());
+        }
+    }
+
+    /**
+     * Client-detected inactivity (no mouse/keyboard for 5 minutes) — marks the user AWAY
+     * without waiting for their WebSocket connection to actually drop.
+     *
+     * Client sends to: /app/presence.idle
+     */
+    @MessageMapping("/presence.idle")
+    public void idle(Principal principal) {
+        if (principal == null) return;
+
+        userService.findByEmail(principal.getName()).ifPresent(user -> {
+            userService.setStatus(user.getId(), "AWAY");
+            messagingTemplate.convertAndSend("/topic/presence",
+                    Map.of("userId", user.getId(), "status", "AWAY"));
+        });
+    }
+
+    /**
+     * Client-detected return from idle (mouse/keyboard activity resumed) — flips AWAY
+     * back to ONLINE. Deliberately separate from {@link #ping} so the 30s heartbeat
+     * doesn't itself cancel idle detection.
+     *
+     * Client sends to: /app/presence.active
+     */
+    @MessageMapping("/presence.active")
+    public void active(Principal principal) {
+        if (principal == null) return;
+
+        userService.findByEmail(principal.getName()).ifPresent(user -> {
+            userService.setOnline(user.getId());
+            messagingTemplate.convertAndSend("/topic/presence",
+                    Map.of("userId", user.getId(), "status", "ONLINE"));
+        });
     }
 }

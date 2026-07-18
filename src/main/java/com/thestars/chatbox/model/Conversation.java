@@ -43,8 +43,14 @@ public class Conversation {
     /** Number of unread messages for the current user */
     private int unreadCount;
 
-    /** List of participants (loaded on demand) */
-    private java.util.List<User> participants;
+    /** List of participants with their role, loaded on demand */
+    private java.util.List<Participant> participants;
+
+    /** Whether the requesting user is an OWNER or DEPUTY of this conversation (set per-request, not persisted) */
+    private boolean currentUserIsAdmin;
+
+    /** The requesting user's exact role in this conversation: OWNER, DEPUTY, or MEMBER (null for SINGLE chats) */
+    private String currentUserRole;
 
     /** For SINGLE conversations: the other participant's user id (used to match live presence events). */
     private Long otherUserId;

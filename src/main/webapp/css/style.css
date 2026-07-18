@@ -428,14 +428,6 @@ input { font-family: inherit; }
     overflow-y: auto;
     padding: 0 8px 8px;
 }
-.chat-section__title {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    color: var(--text-muted);
-    padding: 12px 10px 6px;
-}
 .chat-list li {
     display: flex;
     align-items: center;
@@ -509,6 +501,15 @@ input { font-family: inherit; }
 }
 .chat-list li.active .unread-badge {
     box-shadow: 0 0 0 2px var(--neon), 0 3px 10px rgba(248,113,113,0.5);
+}
+
+/* Unread conversations stay in the same time-sorted list, just read louder */
+.chat-list li.has-unread .chat-preview {
+    color: var(--text);
+    font-weight: 600;
+}
+.chat-list li.has-unread .chat-time {
+    color: var(--text-secondary);
 }
 
 @keyframes badgePop {
@@ -600,7 +601,7 @@ input { font-family: inherit; }
     flex-shrink: 0;
     margin-top: 4px;
 }
-.msg__body { position: relative; }
+.msg__body { position: relative; display: flex; flex-direction: column; min-width: 0; }
 .msg__bubble {
     padding: 10px 16px;
     border-radius: var(--r-md);
@@ -639,6 +640,115 @@ input { font-family: inherit; }
     text-align: right;
 }
 .msg--self .msg__time { color: rgba(255,255,255,0.45); }
+
+.msg__status { display: inline-flex; margin-left: 4px; vertical-align: middle; }
+.tick { font-size: 12px; line-height: 1; }
+.tick--sending {
+    display: inline-block;
+    color: var(--yellow);
+    animation: tickSpin 1s linear infinite;
+}
+.tick--sent, .tick--delivered { color: rgba(255,255,255,0.45); }
+.tick--read { color: #7dd3fc; font-weight: 700; }
+@keyframes tickSpin { to { transform: rotate(360deg); } }
+
+/* ── Rich text (Markdown) inside message bubbles ── */
+.msg__rich-text p { margin: 0 0 6px; }
+.msg__rich-text p:last-child { margin-bottom: 0; }
+.msg__rich-text ul, .msg__rich-text ol { margin: 4px 0; padding-left: 20px; }
+.msg__rich-text a { color: inherit; text-decoration: underline; }
+.msg__rich-text code {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 0.9em;
+    background: rgba(0,0,0,0.25);
+    padding: 1px 5px;
+    border-radius: 4px;
+}
+.msg__rich-text pre {
+    margin: 6px 0;
+    max-width: 100%;
+    overflow-x: auto;
+    border-radius: var(--r-sm);
+    background: #0c0f16 !important;
+}
+.msg__rich-text pre code {
+    background: none;
+    padding: 26px 14px 12px;
+    display: block;
+    font-size: 12.5px;
+    white-space: pre;
+}
+.mention {
+    color: var(--neon-light);
+    font-weight: 600;
+    background: var(--neon-glow);
+    padding: 0 3px;
+    border-radius: 4px;
+}
+.code-lang-label {
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255,255,255,0.32);
+    pointer-events: none;
+}
+.code-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    font-size: 11px;
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 9px;
+    cursor: pointer;
+}
+.code-copy-btn:hover { background: rgba(255,255,255,0.18); }
+
+.system-message {
+    align-self: center;
+    text-align: center;
+    max-width: 80%;
+    margin: 6px auto;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.03);
+    border-radius: var(--r-full);
+    padding: 4px 14px;
+}
+
+/* ── Generic right-click context menu ── */
+.context-menu {
+    position: fixed;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    min-width: 160px;
+    background: var(--glass-bg-dense);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border-light);
+    border-radius: var(--r-sm);
+    padding: 6px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+    animation: fadeIn var(--t-fast) var(--ease);
+}
+.context-menu button {
+    background: none;
+    border: none;
+    color: var(--text);
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 13px;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+}
+.context-menu button:hover { background: rgba(255,255,255,0.07); }
 
 /* Meeting Card */
 .meeting-card {
@@ -730,12 +840,42 @@ input { font-family: inherit; }
 }
 
 .chat-footer {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 10px;
     padding: 12px 16px;
     border-radius: 0 0 var(--r-lg) var(--r-lg);
 }
+
+.mention-dropdown {
+    position: absolute;
+    bottom: 100%;
+    left: 16px;
+    margin-bottom: 8px;
+    width: 220px;
+    max-width: calc(100% - 32px);
+    max-height: 180px;
+    overflow-y: auto;
+    background: var(--glass-bg-dense);
+    border: 1px solid var(--glass-border-light);
+    border-radius: var(--r-sm);
+    padding: 6px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+    z-index: 50;
+}
+.mention-suggestion {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+}
+.mention-suggestion:hover { background: rgba(255,255,255,0.06); }
+.mention-suggestion img { width: 22px; height: 22px; border-radius: var(--r-full); }
+.mention-suggestion span { font-size: 13px; color: var(--text); }
+
 .input-glass { flex: 1; }
 .input-glass input {
     width: 100%;
@@ -807,6 +947,66 @@ input { font-family: inherit; }
     color: var(--text-muted);
     margin-left: auto;
 }
+
+/* ── Thread Sidebar ── */
+.col-thread {
+    width: var(--resources-w);
+    min-width: var(--resources-w);
+    border-radius: var(--r-lg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: slideInRight 0.4s var(--ease) both;
+}
+.thread-parent {
+    flex-shrink: 0;
+    margin: 0 18px 14px;
+    padding: 12px 14px;
+    border-left: 3px solid var(--neon);
+    background: var(--inset-bg);
+    border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+.thread-parent__meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.thread-parent__meta img { width: 22px; height: 22px; border-radius: var(--r-full); }
+.thread-parent__name { font-size: 12px; font-weight: 600; color: var(--neon-light); }
+.thread-parent__time { font-size: 10px; color: var(--text-muted); margin-left: auto; }
+.thread-parent__content { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+
+.thread-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 18px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.thread-footer {
+    flex-shrink: 0;
+    border-radius: 0;
+    padding: 12px 18px;
+}
+
+.msg__thread-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 5px;
+    padding: 3px 9px;
+    border-radius: var(--r-full);
+    border: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.03);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    opacity: 0.35;
+    transition: opacity var(--t-fast), background var(--t-fast), color var(--t-fast);
+}
+.msg__thread-btn svg { width: 12px; height: 12px; }
+.msg:hover .msg__thread-btn,
+.msg__thread-btn.has-replies { opacity: 1; }
+.msg__thread-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+.msg--self .msg__thread-btn { align-self: flex-end; }
 
 .images-grid {
     display: grid;
@@ -1021,6 +1221,22 @@ input { font-family: inherit; }
 }
 .friend-item__empty p { font-size: 12px; opacity: 0.5; }
 
+.notification-item {
+    padding: 10px 12px;
+    border-radius: var(--r-sm);
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--glass-border);
+    cursor: pointer;
+    transition: background var(--t-fast);
+}
+.notification-item:hover { background: rgba(255,255,255,0.04); }
+.notification-item--unread {
+    border-left: 3px solid var(--neon);
+    background: var(--neon-glow);
+}
+.notification-item__content { font-size: 13px; color: var(--text); line-height: 1.4; }
+.notification-item__time { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+
 .badge-dot {
     display: inline-block;
     width: 8px;
@@ -1029,6 +1245,8 @@ input { font-family: inherit; }
     background: var(--red);
     box-shadow: 0 0 6px rgba(248,113,113,0.6);
 }
+/* On a bare icon button (no inline text flow to sit next to) it reads as a corner dot */
+#btn-open-notifications .badge-dot { position: absolute; top: 6px; right: 6px; }
 
 .admin-toolbar {
     display: flex;
@@ -1291,6 +1509,14 @@ input { font-family: inherit; }
 }
 .btn-danger-sm:hover { background: rgba(248,113,113,0.25); }
 
+.btn-leave-group {
+    display: block;
+    width: 100%;
+    margin-top: 12px;
+    padding: 9px 12px;
+    text-align: center;
+}
+
 /* ── Labeled nav pill (sidebar header actions that need a text label) ── */
 .nav-pill {
     display: flex;
@@ -1340,6 +1566,22 @@ input { font-family: inherit; }
 .search-friend-btn.is-pending { background: transparent; border-color: var(--glass-border-light); color: var(--text-secondary); }
 .search-friend-btn.is-pending:hover { background: rgba(255,255,255,0.06); box-shadow: none; }
 .search-friend-btn.is-friends { background: rgba(52,211,153,0.15); color: var(--green); cursor: default; }
+
+/* ── Reconnect banner ── */
+.reconnect-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 998;
+    text-align: center;
+    padding: 9px;
+    font-size: 13px;
+    font-weight: 600;
+    background: var(--yellow);
+    color: #1a1a1a;
+    animation: fadeIn var(--t-fast) var(--ease);
+}
 
 /* ── Toast notifications (replaces native alert()) ── */
 .toast-stack {
@@ -1471,7 +1713,7 @@ input { font-family: inherit; }
 }
 
 @media (max-width: 1200px) {
-    .col-resources { display: none !important; }
+    .col-resources, .col-thread { display: none !important; }
 }
 @media (max-width: 768px) {
     /* Set padding/structure */
@@ -1544,6 +1786,32 @@ input { font-family: inherit; }
         transform: translateX(0);
     }
 
+    /* Thread sidebar on mobile — same full-screen overlay treatment as Resources */
+    .col-thread {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 100% !important;
+        height: 100% !important;
+        z-index: 21;
+        background: rgba(16, 20, 35, 0.95) !important;
+        backdrop-filter: blur(20px);
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+        display: flex !important;
+    }
+    .col-thread.hidden {
+        transform: translateX(100%);
+        display: flex !important;
+    }
+    .col-thread:not(.hidden) {
+        transform: translateX(0);
+    }
+
     .admin-panel { width: 100vw; max-width: 100vw; border-radius: 0; }
     .stats-grid { grid-template-columns: 1fr; }
+
+    /* Bubbles can use more of the (much narrower) screen width */
+    .msg { max-width: 85%; }
+    .msg__rich-text pre code { font-size: 12px; }
 }

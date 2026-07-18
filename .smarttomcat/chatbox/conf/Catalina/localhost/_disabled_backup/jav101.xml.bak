@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<Context docBase="D:/H2NO3/jav101/src/main/web">
+  <Resources cacheMaxSize="10240">
+    <PreResources base="D:/H2NO3/jav101/target/classes" className="org.apache.catalina.webresources.DirResourceSet" webAppMount="/WEB-INF/classes"/>
+  </Resources>
+</Context>

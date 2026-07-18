@@ -23,7 +23,7 @@ public class Message {
     private Long senderId;
     private String content;
 
-    /** TEXT, FILE, MEETING_LINK, IMAGE */
+    /** TEXT, FILE, MEETING_LINK, IMAGE, SYSTEM */
     @Builder.Default
     private String messageType = "TEXT";
 
@@ -31,6 +31,13 @@ public class Message {
     private boolean deleted = false;
 
     private LocalDateTime createdAt;
+
+    /** Null for a normal top-level message; the parent's id when this is a thread reply */
+    private Long parentId;
+
+    /** Number of thread replies this message has (0 for replies themselves) */
+    @Builder.Default
+    private int replyCount = 0;
 
     // --- Transient fields ---
 
@@ -45,4 +52,7 @@ public class Message {
 
     /** Temporary client-side message ID for optimistic UI updates */
     private String clientMsgId;
+
+    /** SENT, DELIVERED, or READ — only meaningful for the requesting user's own messages */
+    private String readState;
 }

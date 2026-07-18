@@ -93,6 +93,12 @@ public class UserService {
         clearCacheByUserId(userId);
     }
 
+    /** Generic status setter — used for AWAY (idle) where there's no dedicated convenience method. */
+    public void setStatus(Long userId, String status) {
+        userDAO.updateStatus(userId, status);
+        clearCacheByUserId(userId);
+    }
+
     // ── Token Session Management for Multi-Tab Autonomy ──
     private final java.util.Map<String, String> tokenToEmailMap = new java.util.concurrent.ConcurrentHashMap<>();
 

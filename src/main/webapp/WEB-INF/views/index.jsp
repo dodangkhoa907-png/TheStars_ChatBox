@@ -15,8 +15,11 @@
 
     <!-- Stylesheet -->
     <link rel="stylesheet" href="${pageContext.request.contextPath}/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
 </head>
 <body>
+
+    <div id="reconnect-banner" class="reconnect-banner hidden" role="status" aria-live="polite"></div>
 
     <!-- ═══════════════════════════════════════════════════════════
          ANIMATED BACKGROUND (gradient mesh behind glass panels)
@@ -51,6 +54,10 @@
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
                             <span class="nav-pill__label">Friends</span>
                             <span class="badge-dot hidden" id="friends-badge-dot"></span>
+                        </button>
+                        <button class="icon-btn" id="btn-open-notifications" title="Notifications" style="position:relative;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                            <span class="badge-dot hidden" id="notifications-badge-dot"></span>
                         </button>
                         <button class="icon-btn" id="btn-open-admin" title="Admin Panel">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -87,16 +94,9 @@
                     </button>
                 </div>
 
-                <!-- Chat List -->
+                <!-- Chat List — single list, always sorted by most recent activity -->
                 <nav class="chat-list-wrapper" id="chat-list-wrapper">
-                    <div class="chat-section" id="section-new">
-                        <h3 class="chat-section__title">New Messages</h3>
-                        <ul class="chat-list" id="chat-list-new"></ul>
-                    </div>
-                    <div class="chat-section" id="section-last">
-                        <h3 class="chat-section__title">Last Messages</h3>
-                        <ul class="chat-list" id="chat-list-last"></ul>
-                    </div>
+                    <ul class="chat-list" id="chat-list"></ul>
                 </nav>
             </aside>
 
@@ -154,6 +154,7 @@
 
                 <!-- Message Input Footer -->
                 <footer class="chat-footer glass-panel-thin hidden" id="chat-footer">
+                    <div class="mention-dropdown hidden" id="mention-dropdown"></div>
                     <button class="icon-btn icon-btn--circle" id="btn-attach" title="Attach File">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
@@ -174,6 +175,14 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     </button>
                 </header>
+                <section class="resource-section hidden" id="members-section">
+                    <h4 class="resource-section__title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                        Members <span class="badge" id="badge-members">0</span>
+                    </h4>
+                    <ul class="friends-list" id="members-list"></ul>
+                    <button class="btn-danger-sm btn-leave-group" id="btn-leave-group">Leave Group</button>
+                </section>
                 <section class="resource-section">
                     <h4 class="resource-section__title">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
@@ -188,6 +197,26 @@
                     </h4>
                     <ul class="files-list" id="files-list"></ul>
                 </section>
+            </aside>
+
+            <!-- ──────── COL 4: THREAD SIDEBAR ──────── -->
+            <aside class="col-thread glass-panel hidden" id="col-thread">
+                <header class="resources-header">
+                    <h3>Thread</h3>
+                    <button class="icon-btn icon-btn--sm" id="btn-close-thread" title="Close">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </header>
+                <div class="thread-parent" id="thread-parent"></div>
+                <div class="thread-messages" id="thread-messages"></div>
+                <footer class="chat-footer glass-panel-thin thread-footer">
+                    <div class="input-glass glass-inset">
+                        <input type="text" id="thread-input" placeholder="Reply in thread..." autocomplete="off">
+                    </div>
+                    <button class="btn-send" id="btn-thread-send" title="Send">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                </footer>
             </aside>
         </div>
     </section>
@@ -264,6 +293,19 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════
+         NOTIFICATIONS POPOVER (same floating-card treatment as Friends)
+         ═══════════════════════════════════════════════════════════ -->
+    <div class="friends-popover glass-card hidden" id="notifications-overlay">
+        <header class="friends-popover__header">
+            <h2>Notifications</h2>
+            <button class="icon-btn icon-btn--sm" id="btn-close-notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </header>
+        <div class="friends-popover__body">
+            <ul class="friends-list" id="notifications-list"></ul>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
          CREATE GROUP MODAL
          ═══════════════════════════════════════════════════════════ -->
     <div class="modal-overlay hidden" id="modal-create-group">
@@ -282,6 +324,25 @@
             <footer class="modal-footer">
                 <button class="btn-ghost" id="btn-modal-cancel">Cancel</button>
                 <button class="btn-primary" id="btn-modal-create">Create Group</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         TRANSFER LEADERSHIP MODAL (shown when the owner leaves a group
+         that still has other members — pick who becomes the new owner)
+         ═══════════════════════════════════════════════════════════ -->
+    <div class="modal-overlay hidden" id="modal-transfer-leave">
+        <div class="glass-card modal-card">
+            <header class="modal-header"><h3>Choose a New Group Owner</h3>
+                <button class="icon-btn icon-btn--sm" id="btn-close-transfer-modal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            </header>
+            <div class="modal-body">
+                <p style="font-size:13px; color:var(--text-secondary); margin:0 0 12px;">You're the owner of this group. Pick someone to take over before you leave.</p>
+                <ul class="member-results" id="transfer-candidates" style="max-height: 220px;"></ul>
+            </div>
+            <footer class="modal-footer">
+                <button class="btn-ghost" id="btn-transfer-modal-cancel">Cancel</button>
             </footer>
         </div>
     </div>
@@ -350,6 +411,9 @@
     <!-- ══════ Scripts ══════ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.0/purify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="${pageContext.request.contextPath}/js/app.js"></script>
 </body>
 </html>

@@ -87,7 +87,7 @@ BEGIN
         conversation_id     BIGINT NOT NULL,
         sender_id           BIGINT NOT NULL,
         content             NVARCHAR(MAX),
-        message_type        NVARCHAR(20) NOT NULL DEFAULT 'TEXT',  -- TEXT, FILE, MEETING_LINK, IMAGE
+        message_type        NVARCHAR(20) NOT NULL DEFAULT 'TEXT',  -- TEXT, FILE, MEETING_LINK, IMAGE, SYSTEM
         is_deleted          BIT NOT NULL DEFAULT 0,
         created_at          DATETIME2 NOT NULL DEFAULT GETDATE(),
 
@@ -96,6 +96,26 @@ BEGIN
         CONSTRAINT FK_Messages_Sender
             FOREIGN KEY (sender_id) REFERENCES Users(id)
     );
+END
+GO
+
+-- Threads: a reply points back at the message it's replying to.
+-- Added via ALTER so this stays safe to re-run against an already-created Messages table.
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Messages') AND name = 'parent_id')
+BEGIN
+    ALTER TABLE Messages ADD parent_id BIGINT NULL;
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Messages') AND name = 'reply_count')
+BEGIN
+    ALTER TABLE Messages ADD reply_count INT NOT NULL DEFAULT 0;
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Messages_Parent')
+BEGIN
+    ALTER TABLE Messages ADD CONSTRAINT FK_Messages_Parent FOREIGN KEY (parent_id) REFERENCES Messages(id);
 END
 GO
 
@@ -172,6 +192,96 @@ END
 GO
 
 -- ============================================================
+-- 8. MESSAGE READS TABLE
+-- Per-recipient delivery/read tracking for tick-style receipts.
+-- One row per (message, recipient) — the sender never gets a row for
+-- their own message. delivered_at/read_at are set independently so a
+-- message can be DELIVERED without being READ yet.
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Message_Reads')
+BEGIN
+    CREATE TABLE Message_Reads (
+        message_id      BIGINT NOT NULL,
+        user_id         BIGINT NOT NULL,
+        delivered_at    DATETIME2 NULL,
+        read_at         DATETIME2 NULL,
+
+        CONSTRAINT PK_MessageReads PRIMARY KEY (message_id, user_id),
+        CONSTRAINT FK_MessageReads_Message
+            FOREIGN KEY (message_id) REFERENCES Messages(id) ON DELETE CASCADE,
+        CONSTRAINT FK_MessageReads_User
+            FOREIGN KEY (user_id) REFERENCES Users(id)
+    );
+END
+GO
+
+-- ============================================================
+-- 9. NOTIFICATIONS TABLE
+-- One row per @mention (or future notification type) a user should see.
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Notifications')
+BEGIN
+    CREATE TABLE Notifications (
+        id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+        user_id         BIGINT NOT NULL,                    -- recipient
+        message_id      BIGINT NOT NULL,                    -- the message that mentioned them
+        content         NVARCHAR(255) NOT NULL,             -- preview text shown in the notification
+        is_read         BIT NOT NULL DEFAULT 0,
+        created_at      DATETIME2 NOT NULL DEFAULT GETDATE(),
+
+        CONSTRAINT FK_Notifications_User
+            FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
+        CONSTRAINT FK_Notifications_Message
+            FOREIGN KEY (message_id) REFERENCES Messages(id)
+    );
+END
+GO
+
+-- ============================================================
+-- 10. GROUP OWNERSHIP MODEL (OWNER / DEPUTY / MEMBER)
+-- Migrates the old flat ADMIN/MEMBER roles to a Zalo-style model with
+-- exactly one OWNER ("nhom truong") per group, plus zero or more DEPUTY
+-- ("pho nhom") co-admins. Safe to re-run: once no Participants row has
+-- role = 'ADMIN' in a GROUP conversation, both statements below no-op.
+-- ============================================================
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Participants')
+BEGIN
+    -- Earliest-joined ADMIN per group becomes the OWNER.
+    ;WITH RankedAdmins AS (
+        SELECT p.id,
+               ROW_NUMBER() OVER (PARTITION BY p.conversation_id ORDER BY p.joined_at ASC, p.id ASC) AS rn
+        FROM Participants p
+        INNER JOIN Conversations c ON c.id = p.conversation_id
+        WHERE p.role = 'ADMIN' AND c.type = 'GROUP'
+    )
+    UPDATE Participants
+    SET role = 'OWNER'
+    WHERE id IN (SELECT id FROM RankedAdmins WHERE rn = 1);
+
+    -- Any other pre-existing ADMIN in the same group becomes a DEPUTY.
+    UPDATE p
+    SET role = 'DEPUTY'
+    FROM Participants p
+    INNER JOIN Conversations c ON c.id = p.conversation_id
+    WHERE p.role = 'ADMIN' AND c.type = 'GROUP';
+END
+GO
+
+-- Allow dissolving a group (deleting its Conversations row) to cascade into
+-- any Notifications referencing its messages, instead of being blocked by
+-- an FK error — needed now that leaving as the last member deletes the group.
+IF EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = 'FK_Notifications_Message' AND delete_referential_action = 0
+)
+BEGIN
+    ALTER TABLE Notifications DROP CONSTRAINT FK_Notifications_Message;
+    ALTER TABLE Notifications ADD CONSTRAINT FK_Notifications_Message
+        FOREIGN KEY (message_id) REFERENCES Messages(id) ON DELETE CASCADE;
+END
+GO
+
+-- ============================================================
 -- INDEXES for query performance
 -- ============================================================
 
@@ -223,6 +333,22 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Friendships_Addressee_
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Friendships_Requester_Status')
     CREATE INDEX IX_Friendships_Requester_Status
         ON Friendships (requester_id, status);
+
+-- Message_Reads: Aggregate delivered/read state per message (tick rendering)
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_MessageReads_Message')
+    CREATE INDEX IX_MessageReads_Message
+        ON Message_Reads (message_id);
+
+-- Messages: Find all replies in a thread
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Messages_ParentId')
+    CREATE INDEX IX_Messages_ParentId
+        ON Messages (parent_id)
+        WHERE parent_id IS NOT NULL;
+
+-- Notifications: Find a user's unread notifications
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Notifications_User_Unread')
+    CREATE INDEX IX_Notifications_User_Unread
+        ON Notifications (user_id, is_read);
 
 GO
 

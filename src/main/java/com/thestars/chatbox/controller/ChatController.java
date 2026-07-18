@@ -69,7 +69,7 @@ public class ChatController {
             return ResponseEntity.status(403).body(Map.of("error", "Not a participant"));
         }
 
-        return chatService.getConversationWithParticipants(id)
+        return chatService.getConversationWithParticipants(id, user.get().getId())
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -132,12 +132,33 @@ public class ChatController {
             return ResponseEntity.status(403).body(Map.of("error", "Not a participant"));
         }
 
-        List<Message> messages = messageService.getMessages(id, page, size);
+        List<Message> messages = messageService.getMessages(id, page, size, user.get().getId());
 
         // Mark as read
         chatService.markAsRead(id, user.get().getId());
 
         return ResponseEntity.ok(messages);
+    }
+
+    /**
+     * GET /api/conversations/{id}/messages/{parentId}/thread — Get a message's thread.
+     * Returns the parent message plus all its replies, oldest first.
+     */
+    @GetMapping("/{id}/messages/{parentId}/thread")
+    public ResponseEntity<?> getThread(@PathVariable Long id, @PathVariable Long parentId, Principal principal) {
+        Optional<User> user = userService.findByEmail(principal.getName());
+        if (user.isEmpty()) return ResponseEntity.status(401).build();
+
+        if (!chatService.isParticipant(id, user.get().getId())) {
+            return ResponseEntity.status(403).body(Map.of("error", "Not a participant"));
+        }
+
+        Optional<Message> parent = messageService.findById(parentId);
+        if (parent.isEmpty()) return ResponseEntity.notFound().build();
+        userService.findById(parent.get().getSenderId()).ifPresent(parent.get()::setSender);
+
+        List<Message> replies = messageService.getThreadReplies(parentId);
+        return ResponseEntity.ok(Map.of("parent", parent.get(), "replies", replies));
     }
 
     /**
@@ -156,12 +177,16 @@ public class ChatController {
             return ResponseEntity.badRequest().body(Map.of("error", "userId is required"));
         }
 
-        chatService.addMember(id, userId.longValue());
+        chatService.addMember(id, userId.longValue(), user.get().getId());
         return ResponseEntity.ok(Map.of("success", true));
     }
 
     /**
-     * DELETE /api/conversations/{id}/participants/{userId} — Remove a member.
+     * DELETE /api/conversations/{id}/participants/{userId} — Kick a member, or leave
+     * (self-removal is routed through {@link #leaveGroup} so an owner can never
+     * accidentally orphan the group — ownership auto-transfers first).
+     * Kicking someone else requires the caller to be the OWNER, or a DEPUTY kicking
+     * a plain MEMBER (a deputy can't kick the owner or another deputy).
      */
     @DeleteMapping("/{id}/participants/{userId}")
     public ResponseEntity<?> removeParticipant(@PathVariable Long id,
@@ -169,9 +194,110 @@ public class ChatController {
                                                Principal principal) {
         Optional<User> user = userService.findByEmail(principal.getName());
         if (user.isEmpty()) return ResponseEntity.status(401).build();
+        Long callerId = user.get().getId();
 
-        chatService.removeMember(id, userId);
+        if (userId.equals(callerId)) {
+            try {
+                chatService.leaveGroup(id, callerId, null);
+                return ResponseEntity.ok(Map.of("success", true));
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            }
+        }
+
+        if (chatService.isOwner(id, callerId)) {
+            // owner can kick anyone
+        } else if (chatService.isAdmin(id, callerId) && !chatService.isAdmin(id, userId)) {
+            // deputy can only kick a plain member
+        } else {
+            return ResponseEntity.status(403).body(Map.of("error", "You don't have permission to remove this member"));
+        }
+
+        chatService.removeMember(id, userId, callerId);
         return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    /**
+     * POST /api/conversations/{id}/leave — Leave a group.
+     * Body (optional): { "newOwnerId": 5 } — required to be provided by the client
+     * when the caller is the owner and hasn't specified who should take over; if
+     * omitted the server auto-picks (earliest-joined deputy, else earliest member).
+     */
+    @PostMapping("/{id}/leave")
+    public ResponseEntity<?> leaveGroup(@PathVariable Long id,
+                                        @RequestBody(required = false) Map<String, Object> body,
+                                        Principal principal) {
+        Optional<User> user = userService.findByEmail(principal.getName());
+        if (user.isEmpty()) return ResponseEntity.status(401).build();
+
+        Number newOwnerId = body != null ? (Number) body.get("newOwnerId") : null;
+        try {
+            chatService.leaveGroup(id, user.get().getId(), newOwnerId != null ? newOwnerId.longValue() : null);
+            return ResponseEntity.ok(Map.of("success", true));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * POST /api/conversations/{id}/participants/{userId}/promote — Promote a member to
+     * DEPUTY ("pho nhom"). Only the group OWNER may appoint deputies.
+     */
+    @PostMapping("/{id}/participants/{userId}/promote")
+    public ResponseEntity<?> promote(@PathVariable Long id, @PathVariable Long userId, Principal principal) {
+        Optional<User> user = userService.findByEmail(principal.getName());
+        if (user.isEmpty()) return ResponseEntity.status(401).build();
+
+        if (!chatService.isOwner(id, user.get().getId())) {
+            return ResponseEntity.status(403).body(Map.of("error", "Only the group owner can appoint deputies"));
+        }
+
+        chatService.promoteToDeputy(id, userId);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    /**
+     * POST /api/conversations/{id}/participants/{userId}/demote — Demote a deputy
+     * back to a plain member. Only the group OWNER may do this.
+     */
+    @PostMapping("/{id}/participants/{userId}/demote")
+    public ResponseEntity<?> demote(@PathVariable Long id, @PathVariable Long userId, Principal principal) {
+        Optional<User> user = userService.findByEmail(principal.getName());
+        if (user.isEmpty()) return ResponseEntity.status(401).build();
+
+        if (!chatService.isOwner(id, user.get().getId())) {
+            return ResponseEntity.status(403).body(Map.of("error", "Only the group owner can demote a deputy"));
+        }
+
+        chatService.demoteToMember(id, userId);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    /**
+     * POST /api/conversations/{id}/transfer-ownership — Hand group ownership to
+     * another member without leaving. Body: { "newOwnerId": 5 }
+     */
+    @PostMapping("/{id}/transfer-ownership")
+    public ResponseEntity<?> transferOwnership(@PathVariable Long id, @RequestBody Map<String, Object> body,
+                                               Principal principal) {
+        Optional<User> user = userService.findByEmail(principal.getName());
+        if (user.isEmpty()) return ResponseEntity.status(401).build();
+
+        if (!chatService.isOwner(id, user.get().getId())) {
+            return ResponseEntity.status(403).body(Map.of("error", "Only the group owner can transfer ownership"));
+        }
+
+        Number newOwnerId = (Number) body.get("newOwnerId");
+        if (newOwnerId == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "newOwnerId is required"));
+        }
+
+        try {
+            chatService.transferOwnership(id, user.get().getId(), newOwnerId.longValue());
+            return ResponseEntity.ok(Map.of("success", true));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     /**

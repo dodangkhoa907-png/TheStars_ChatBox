@@ -21,21 +21,26 @@ public class MessageService {
     private final MessageReactionDAO reactionDAO;
     private final ConversationDAO conversationDAO;
     private final UserDAO userDAO;
+    private final MessageReadDAO messageReadDAO;
+    private final MentionService mentionService;
 
     public MessageService(MessageDAO messageDAO, AttachmentDAO attachmentDAO,
                           MessageReactionDAO reactionDAO, ConversationDAO conversationDAO,
-                          UserDAO userDAO) {
+                          UserDAO userDAO, MessageReadDAO messageReadDAO, MentionService mentionService) {
         this.messageDAO = messageDAO;
         this.attachmentDAO = attachmentDAO;
         this.reactionDAO = reactionDAO;
         this.conversationDAO = conversationDAO;
         this.userDAO = userDAO;
+        this.messageReadDAO = messageReadDAO;
+        this.mentionService = mentionService;
     }
 
     /**
-     * Get paginated messages for a conversation with sender info, attachments, and reactions.
+     * Get paginated messages for a conversation with sender info, attachments, reactions,
+     * and — for the requesting user's own messages — their delivered/read tick state.
      */
-    public List<Message> getMessages(Long conversationId, int page, int size) {
+    public List<Message> getMessages(Long conversationId, int page, int size, Long requestingUserId) {
         int offset = page * size;
         List<Message> messages = messageDAO.findByConversationId(conversationId, offset, size);
 
@@ -55,10 +60,21 @@ public class MessageService {
         Map<Long, List<MessageReaction>> reactionMap = allReactions.stream()
                 .collect(Collectors.groupingBy(MessageReaction::getMessageId));
 
+        // Tick state only matters for messages the requester sent themselves
+        List<Long> ownMessageIds = messages.stream()
+                .filter(m -> m.getSenderId().equals(requestingUserId))
+                .map(Message::getId)
+                .toList();
+        Map<Long, String> readStates = messageReadDAO.getReadStates(ownMessageIds);
+
         // Enrich messages
         for (Message msg : messages) {
             msg.setSender(senderMap.get(msg.getSenderId()));
             msg.setReactions(reactionMap.getOrDefault(msg.getId(), List.of()));
+
+            if (msg.getSenderId().equals(requestingUserId)) {
+                msg.setReadState(readStates.getOrDefault(msg.getId(), "SENT"));
+            }
 
             // Load attachments for FILE/IMAGE messages
             if ("FILE".equals(msg.getMessageType()) || "IMAGE".equals(msg.getMessageType())) {
@@ -70,15 +86,36 @@ public class MessageService {
     }
 
     /**
-     * Send a new message.
+     * Record that a recipient's client has received a message live over the socket.
+     * Returns the message's conversation id so the caller can broadcast a tick update.
+     */
+    public Long markDelivered(Long messageId, Long userId) {
+        Optional<Message> message = messageDAO.findById(messageId);
+        if (message.isEmpty()) return null;
+
+        messageReadDAO.markDelivered(messageId, userId);
+        return message.get().getConversationId();
+    }
+
+    /**
+     * Send a new top-level message.
      */
     @Transactional
     public Message sendMessage(Long conversationId, Long senderId, String content, String messageType) {
+        return sendMessage(conversationId, senderId, content, messageType, null);
+    }
+
+    /**
+     * Send a message, optionally as a reply within an existing thread.
+     */
+    @Transactional
+    public Message sendMessage(Long conversationId, Long senderId, String content, String messageType, Long parentId) {
         Message message = Message.builder()
                 .conversationId(conversationId)
                 .senderId(senderId)
                 .content(content)
                 .messageType(messageType != null ? messageType : "TEXT")
+                .parentId(parentId)
                 .build();
 
         message = messageDAO.save(message);
@@ -86,10 +123,42 @@ public class MessageService {
         // Touch conversation updated_at to reorder in sidebar
         conversationDAO.touch(conversationId);
 
+        if (parentId != null) {
+            messageDAO.incrementReplyCount(parentId);
+        }
+
         // Attach sender info for WebSocket broadcast
         userDAO.findById(senderId).ifPresent(message::setSender);
 
+        if ("TEXT".equals(message.getMessageType()) && content != null && content.contains("@")) {
+            mentionService.processMentions(message);
+        }
+
         return message;
+    }
+
+    /**
+     * Reply to an existing message within its thread.
+     */
+    public Message replyInThread(Long parentId, Long senderId, String content) {
+        Message parent = messageDAO.findById(parentId)
+                .orElseThrow(() -> new IllegalArgumentException("Parent message not found"));
+        return sendMessage(parent.getConversationId(), senderId, content, "TEXT", parentId);
+    }
+
+    /**
+     * Get all replies in a thread, enriched with sender info, oldest first.
+     */
+    public List<Message> getThreadReplies(Long parentId) {
+        List<Message> replies = messageDAO.findByParentId(parentId);
+        if (replies.isEmpty()) return replies;
+
+        List<Long> senderIds = replies.stream().map(Message::getSenderId).distinct().toList();
+        Map<Long, User> senderMap = userDAO.findByIds(senderIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+        replies.forEach(r -> r.setSender(senderMap.get(r.getSenderId())));
+
+        return replies;
     }
 
     /**

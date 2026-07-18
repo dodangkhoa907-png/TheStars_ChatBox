@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="2080dc0f-47f0-45d2-ad1d-ba895fa82100" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/compiler.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/encodings.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/jarRepositories.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/material_theme_project_new.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.smarttomcat/chatbox/conf/Catalina/localhost/_disabled_backup/MediVault.xml.bak" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.smarttomcat/chatbox/conf/Catalina/localhost/_disabled_backup/jav101.xml.bak" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.smarttomcat/chatbox/conf/catalina.policy" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.smarttomcat/chatbox/conf/catalina.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.smarttomcat/chatbox/conf/context.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.smarttomcat/chatbox/conf/jaspic-providers.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.smarttomcat/chatbox/conf/jaspic-providers.xsd" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.smarttomcat/chatbox/conf/logging.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.smarttomcat/chatbox/conf/server.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.smarttomcat/chatbox/conf/tomcat-users.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.smarttomcat/chatbox/conf/tomcat-users.xsd" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.smarttomcat/chatbox/conf/web.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/config/PresenceSweepJob.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/config/PresenceTracker.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/NotificationController.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/MessageReadDAO.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/NotificationDAO.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/model/Notification.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/MentionService.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/application.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/ChatBoxApplication.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/config/PresenceEventListener.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/config/PresenceSweepJob.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/config/PresenceTracker.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/config/SecurityConfig.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/config/WebMvcConfig.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/config/WebSocketConfig.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/controller/AuthController.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/controller/ChatController.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/controller/FileController.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/controller/FriendController.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/controller/MessageController.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/controller/NotificationController.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/controller/PageController.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/dao/AttachmentDAO.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/dao/ConversationDAO.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/dao/FriendshipDAO.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/dao/MessageDAO.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/dao/MessageReactionDAO.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/dao/MessageReadDAO.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/dao/NotificationDAO.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/dao/ParticipantDAO.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/dao/UserDAO.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/Attachment$AttachmentBuilder.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/Attachment.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/Conversation$ConversationBuilder.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/Conversation.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/Friendship$FriendshipBuilder.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/Friendship.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/Message$MessageBuilder.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/Message.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/MessageReaction$MessageReactionBuilder.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/MessageReaction.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/Notification$NotificationBuilder.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/Notification.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/Participant$ParticipantBuilder.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/Participant.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/User$UserBuilder.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/model/User.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/security/CustomOAuth2UserService.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/security/CustomUserDetailsService.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/security/TokenAuthenticationFilter.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/service/ChatService.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/service/FileService.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/service/FriendService.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/service/MentionService.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/service/MessageService.class" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/classes/com/thestars/chatbox/service/UserService.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sql/init_schema.sql" beforeDir="false" afterPath="$PROJECT_DIR$/sql/init_schema.sql" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/ChatBoxApplication.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/ChatBoxApplication.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/ChatController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/ChatController.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/MessageController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/MessageController.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/ConversationDAO.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/ConversationDAO.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/MessageDAO.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/MessageDAO.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/ParticipantDAO.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/ParticipantDAO.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/model/Conversation.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/model/Conversation.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/model/Message.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/model/Message.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/ChatService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/ChatService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/MessageService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/MessageService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/UserService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/UserService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/webapp/WEB-INF/views/index.jsp" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/webapp/WEB-INF/views/index.jsp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/webapp/css/style.css" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/webapp/css/style.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/webapp/js/app.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/webapp/js/app.js" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="71" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;dodangkhoa907-png&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/dodangkhoa907-png/TheStars_ChatBox.git&quot;,
+    &quot;accountId&quot;: &quot;64ff00d3-cc55-4a85-823d-fa2db4567f08&quot;
+  }
+}</component>
+  <component name="LogFilters">
+    <option name="FILTER_ERRORS" value="false" />
+    <option name="FILTER_WARNINGS" value="false" />
+    <option name="FILTER_INFO" value="true" />
+    <option name="FILTER_DEBUG" value="true" />
+    <option name="CUSTOM_FILTER" />
+  </component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 4,
+  &quot;fromUser&quot;: false
+}</component>
+  <component name="ProjectId" id="3GcCJYdhGZNhDQaGbg9FHo5W53E" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;Smart Tomcat.Unnamed.executor&quot;: &quot;Run&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/H2NO3/My STUDY/TheStars_ChatBox&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;project.structure.last.edited&quot;: &quot;Project&quot;,
+    &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
+    &quot;project.structure.side.proportion&quot;: &quot;0.0&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.poratu.idea.plugins.tomcat.setting.TomcatServersConfigurable&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RunManager">
+    <configuration name="Unnamed" type="com.poratu.idea.plugins.tomcat" nameIsGenerated="true">
+      <predefined_log_file enabled="true" id="Tomcat Localhost Log" />
+      <predefined_log_file enabled="true" id="Tomcat Access Log" />
+      <predefined_log_file id="Tomcat Catalina Log" />
+      <predefined_log_file id="Tomcat Manager Log" />
+      <predefined_log_file id="Tomcat Host Manager Log" />
+      <option name="adminPort" value="8007" />
+      <option name="catalinaBase" value="C:\Users\KHOA\.SmartTomcat\TheStars_ChatBox\chatbox" />
+      <option name="contextPath" value="/chatbox" />
+      <option name="docBase" value="$PROJECT_DIR$/src/main/webapp" />
+      <option name="extraClassPath" value="" />
+      <option name="port" value="8089" />
+      <option name="tomcatInfo">
+        <TomcatInfo>
+          <option name="name" value="Apache Tomcat/10.1.54" />
+          <option name="path" value="$PROJECT_DIR$/../../../SAVE_KHOA/apache-tomcat-10.1.54-windows-x64/apache-tomcat-10.1.54" />
+          <option name="version" value="10.1.54.0" />
+        </TomcatInfo>
+      </option>
+      <option name="vmOptions" value="" />
+      <module name="chatbox" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="2080dc0f-47f0-45d2-ad1d-ba895fa82100" name="Changes" comment="" />
+      <created>1784261398907</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1784261398907</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+</project>

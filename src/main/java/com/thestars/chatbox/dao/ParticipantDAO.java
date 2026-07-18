@@ -81,6 +81,23 @@ public class ParticipantDAO {
     }
 
     /**
+     * Promote/demote a participant's role within a conversation.
+     */
+    public void updateRole(Long conversationId, Long userId, String role) {
+        String sql = "UPDATE Participants SET role = ? WHERE conversation_id = ? AND user_id = ?";
+        jdbcTemplate.update(sql, role, conversationId, userId);
+    }
+
+    /**
+     * Find a participant's role in a conversation, if they're a member at all.
+     */
+    public java.util.Optional<String> findRole(Long conversationId, Long userId) {
+        String sql = "SELECT role FROM Participants WHERE conversation_id = ? AND user_id = ?";
+        List<String> results = jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("role"), conversationId, userId);
+        return results.stream().findFirst();
+    }
+
+    /**
      * Get the count of participants in a conversation.
      */
     public int countByConversationId(Long conversationId) {
