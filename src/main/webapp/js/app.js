@@ -272,12 +272,16 @@ const ChatAppController = (() => {
         const toggleCol3 = $('#btn-toggle-col3');
         const colResources = $('#col-resources');
         const closeCol3 = $('#btn-close-col3');
+        const closeMobileCol3 = $('#btn-close-col3-mobile');
 
         if (toggleCol3 && colResources) {
             toggleCol3.addEventListener('click', () => colResources.classList.toggle('hidden'));
         }
         if (closeCol3 && colResources) {
             closeCol3.addEventListener('click', () => colResources.classList.add('hidden'));
+        }
+        if (closeMobileCol3 && colResources) {
+            closeMobileCol3.addEventListener('click', () => colResources.classList.add('hidden'));
         }
 
         // Toggle Admin Panel
@@ -1179,6 +1183,9 @@ const ChatAppController = (() => {
                 if (dashboard) {
                     dashboard.classList.remove('show-chat-view');
                 }
+                // Also close resources panel when going back on mobile
+                const res = $('#col-resources');
+                if (res) res.classList.add('hidden');
             });
         }
     }

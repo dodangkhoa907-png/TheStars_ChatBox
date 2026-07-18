@@ -4,7 +4,10 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="description" content="ChatBox_TheStars — Internal Web Chat for IT, Marketing & Graphic Design teams">
     <title>ChatBox TheStars</title>
 
@@ -190,7 +193,12 @@
             <!-- ──────── COL 3: RESOURCES SIDEBAR ──────── -->
             <aside class="col-resources glass-panel hidden" id="col-resources">
                 <header class="resources-header">
-                    <h3>Resources</h3>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <button class="icon-btn icon-btn--sm resources-close-mobile" id="btn-close-col3-mobile" title="Back">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="18" height="18"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                        </button>
+                        <h3>Resources</h3>
+                    </div>
                     <button class="icon-btn icon-btn--sm" id="btn-close-col3" title="Close">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     </button>
