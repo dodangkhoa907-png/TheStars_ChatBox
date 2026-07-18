@@ -44,14 +44,17 @@ public class MessageController {
     }
 
     /**
-     * Handle incoming chat messages via WebSocket.
+     * Handle incoming chat messages via WebSocket. An optional "parentId" in the
+     * payload marks this as a reply quoting an earlier message — it's still sent
+     * to the same conversation topic like any other message, just rendered with a
+     * quoted preview of what it's replying to (no separate thread view).
      *
      * Client sends to: /app/chat.send/{conversationId}
      * Server broadcasts to: /topic/conversation/{conversationId}
      */
     @MessageMapping("/chat.send/{conversationId}")
     public void sendMessage(@DestinationVariable Long conversationId,
-                            @Payload Map<String, String> payload,
+                            @Payload Map<String, Object> payload,
                             Principal principal) {
         if (principal == null) {
             log.warn("Unauthenticated WebSocket message attempt");
@@ -71,12 +74,13 @@ public class MessageController {
             return;
         }
 
-        String content = payload.get("content");
-        String messageType = payload.getOrDefault("messageType", "TEXT");
-        String clientMsgId = payload.get("clientMsgId");
+        String content = (String) payload.get("content");
+        String messageType = payload.get("messageType") != null ? (String) payload.get("messageType") : "TEXT";
+        String clientMsgId = (String) payload.get("clientMsgId");
+        Long parentId = payload.get("parentId") != null ? ((Number) payload.get("parentId")).longValue() : null;
 
         // Save message to database
-        Message message = messageService.sendMessage(conversationId, sender, content, messageType, null);
+        Message message = messageService.sendMessage(conversationId, sender, content, messageType, parentId);
         message.setClientMsgId(clientMsgId);
 
         log.info("Message sent: conv={}, sender={}, type={}", conversationId, sender.getDisplayName(), messageType);
@@ -147,39 +151,6 @@ public class MessageController {
                 "/topic/conversation/" + conversationId + "/reaction",
                 reactionEvent
         );
-    }
-
-    /**
-     * Reply to a message inside its thread.
-     *
-     * Client sends to: /app/chat.replyThread/{parentId}
-     * Server broadcasts the reply to: /topic/thread/{parentId}
-     * Server broadcasts the updated reply count to: /topic/conversation/{conversationId}/thread-update
-     */
-    @MessageMapping("/chat.replyThread/{parentId}")
-    public void replyInThread(@DestinationVariable Long parentId,
-                              @Payload Map<String, String> payload,
-                              Principal principal) {
-        if (principal == null) return;
-        User sender = userService.findByEmail(principal.getName()).orElse(null);
-        if (sender == null) return;
-
-        Message parent = messageService.findById(parentId).orElse(null);
-        if (parent == null) return;
-        if (!chatService.isParticipant(parent.getConversationId(), sender.getId())) {
-            log.warn("User {} is not a participant of conversation {}", sender.getId(), parent.getConversationId());
-            return;
-        }
-
-        String content = payload.get("content");
-        String clientMsgId = payload.get("clientMsgId");
-
-        Message reply = messageService.replyInThread(parentId, sender, content);
-        reply.setClientMsgId(clientMsgId);
-
-        messagingTemplate.convertAndSend("/topic/thread/" + parentId, reply);
-        messagingTemplate.convertAndSend("/topic/conversation/" + parent.getConversationId() + "/thread-update",
-                Map.of("parentId", parentId, "replyCount", parent.getReplyCount() + 1));
     }
 
     /**

@@ -67,6 +67,17 @@ public class MessageService {
                 .toList();
         Map<Long, String> readStates = messageReadDAO.getReadStates(ownMessageIds);
 
+        // Batch load quoted-reply previews (sender + content of whatever each message replies to)
+        List<Long> parentIds = messages.stream().map(Message::getParentId).filter(java.util.Objects::nonNull).distinct().toList();
+        Map<Long, Message> parentMap = parentIds.isEmpty() ? Map.of() : messageDAO.findByIds(parentIds).stream()
+                .collect(Collectors.toMap(Message::getId, m -> m));
+        if (!parentMap.isEmpty()) {
+            List<Long> parentSenderIds = parentMap.values().stream().map(Message::getSenderId).distinct().toList();
+            Map<Long, User> parentSenderMap = userDAO.findByIds(parentSenderIds).stream()
+                    .collect(Collectors.toMap(User::getId, u -> u));
+            parentMap.values().forEach(p -> p.setSender(parentSenderMap.get(p.getSenderId())));
+        }
+
         // Enrich messages
         for (Message msg : messages) {
             msg.setSender(senderMap.get(msg.getSenderId()));
@@ -76,6 +87,10 @@ public class MessageService {
                 msg.setReadState(readStates.getOrDefault(msg.getId(), "SENT"));
             }
 
+            if (msg.getParentId() != null) {
+                applyReplyPreview(msg, parentMap.get(msg.getParentId()));
+            }
+
             // Load attachments for FILE/IMAGE messages
             if ("FILE".equals(msg.getMessageType()) || "IMAGE".equals(msg.getMessageType())) {
                 msg.setAttachments(attachmentDAO.findByMessageId(msg.getId()));
@@ -83,6 +98,12 @@ public class MessageService {
         }
 
         return messages;
+    }
+
+    private void applyReplyPreview(Message message, Message parent) {
+        if (parent == null) return;
+        message.setReplyToSenderName(parent.getSender() != null ? parent.getSender().getDisplayName() : "Someone");
+        message.setReplyToContent(parent.getContent());
     }
 
     /**
@@ -106,8 +127,8 @@ public class MessageService {
     }
 
     /**
-     * Send a message, optionally as a reply within an existing thread. Looks the
-     * sender up by id — prefer the {@link #sendMessage(Long, User, String, String, Long)}
+     * Send a message, optionally as a reply quoting an earlier one (parentId). Looks
+     * the sender up by id — prefer the {@link #sendMessage(Long, User, String, String, Long)}
      * overload when the caller already has the User on hand (e.g. a WebSocket
      * handler that already resolved the Principal), to skip a redundant query.
      */
@@ -135,46 +156,26 @@ public class MessageService {
                 .parentId(parentId)
                 .build();
 
-        message = messageDAO.save(message);
+        final Message savedMessage = messageDAO.save(message);
+        message = savedMessage;
 
         // Touch conversation updated_at to reorder in sidebar
         conversationDAO.touch(conversationId);
 
-        if (parentId != null) {
-            messageDAO.incrementReplyCount(parentId);
-        }
-
         message.setSender(sender);
+
+        if (parentId != null) {
+            messageDAO.findById(parentId).ifPresent(parent -> {
+                parent.setSender(userDAO.findById(parent.getSenderId()).orElse(null));
+                applyReplyPreview(savedMessage, parent);
+            });
+        }
 
         if ("TEXT".equals(message.getMessageType()) && content != null && content.contains("@")) {
             mentionService.processMentions(message);
         }
 
         return message;
-    }
-
-    /**
-     * Reply to an existing message within its thread.
-     */
-    public Message replyInThread(Long parentId, User sender, String content) {
-        Message parent = messageDAO.findById(parentId)
-                .orElseThrow(() -> new IllegalArgumentException("Parent message not found"));
-        return sendMessage(parent.getConversationId(), sender, content, "TEXT", parentId);
-    }
-
-    /**
-     * Get all replies in a thread, enriched with sender info, oldest first.
-     */
-    public List<Message> getThreadReplies(Long parentId) {
-        List<Message> replies = messageDAO.findByParentId(parentId);
-        if (replies.isEmpty()) return replies;
-
-        List<Long> senderIds = replies.stream().map(Message::getSenderId).distinct().toList();
-        Map<Long, User> senderMap = userDAO.findByIds(senderIds).stream()
-                .collect(Collectors.toMap(User::getId, u -> u));
-        replies.forEach(r -> r.setSender(senderMap.get(r.getSenderId())));
-
-        return replies;
     }
 
     /**

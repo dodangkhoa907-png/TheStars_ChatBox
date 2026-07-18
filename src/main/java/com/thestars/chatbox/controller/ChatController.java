@@ -141,27 +141,6 @@ public class ChatController {
     }
 
     /**
-     * GET /api/conversations/{id}/messages/{parentId}/thread — Get a message's thread.
-     * Returns the parent message plus all its replies, oldest first.
-     */
-    @GetMapping("/{id}/messages/{parentId}/thread")
-    public ResponseEntity<?> getThread(@PathVariable Long id, @PathVariable Long parentId, Principal principal) {
-        Optional<User> user = userService.findByEmail(principal.getName());
-        if (user.isEmpty()) return ResponseEntity.status(401).build();
-
-        if (!chatService.isParticipant(id, user.get().getId())) {
-            return ResponseEntity.status(403).body(Map.of("error", "Not a participant"));
-        }
-
-        Optional<Message> parent = messageService.findById(parentId);
-        if (parent.isEmpty()) return ResponseEntity.notFound().build();
-        userService.findById(parent.get().getSenderId()).ifPresent(parent.get()::setSender);
-
-        List<Message> replies = messageService.getThreadReplies(parentId);
-        return ResponseEntity.ok(Map.of("parent", parent.get(), "replies", replies));
-    }
-
-    /**
      * POST /api/conversations/{id}/participants — Add a member.
      * Body: { "userId": 5 }
      */
@@ -327,5 +306,18 @@ public class ChatController {
     @GetMapping("/users")
     public ResponseEntity<?> listUsers() {
         return ResponseEntity.ok(userService.findAll());
+    }
+
+    /**
+     * GET /api/users/{id} — A user's profile (clicking a chat header to view who
+     * you're talking to). password is never serialized (see User.password).
+     */
+    @GetMapping("/users/{id}")
+    public ResponseEntity<?> getUserProfile(@PathVariable Long id, Principal principal) {
+        if (userService.findByEmail(principal.getName()).isEmpty()) return ResponseEntity.status(401).build();
+
+        return userService.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 }

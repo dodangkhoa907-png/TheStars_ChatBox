@@ -1,5 +1,6 @@
 package com.thestars.chatbox.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,6 +21,11 @@ public class User {
     private Long id;
     private String googleId;
     private String email;
+
+    /** Never serialized to JSON — this is a bcrypt hash, and every endpoint that
+     *  returns a User object (friends, search, profiles, message senders...) was
+     *  otherwise shipping it straight to any authenticated client. */
+    @JsonIgnore
     private String password;
     private String avatar;
     private String displayName;

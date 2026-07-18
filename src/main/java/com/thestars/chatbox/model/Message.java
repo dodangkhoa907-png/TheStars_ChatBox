@@ -32,10 +32,10 @@ public class Message {
 
     private LocalDateTime createdAt;
 
-    /** Null for a normal top-level message; the parent's id when this is a thread reply */
+    /** Null for a normal message; the id of the message this one is quoting/replying to */
     private Long parentId;
 
-    /** Number of thread replies this message has (0 for replies themselves) */
+    /** Legacy thread-view reply counter — no longer surfaced in the UI, kept for schema compatibility */
     @Builder.Default
     private int replyCount = 0;
 
@@ -43,6 +43,12 @@ public class Message {
 
     /** Sender's profile (loaded on demand) */
     private User sender;
+
+    /** When parentId is set: the quoted message's sender name, for the inline reply preview */
+    private String replyToSenderName;
+
+    /** When parentId is set: the quoted message's content snippet, for the inline reply preview */
+    private String replyToContent;
 
     /** Attachments linked to this message */
     private List<Attachment> attachments;

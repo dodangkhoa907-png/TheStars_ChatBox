@@ -88,19 +88,18 @@ public class ConversationDAO {
                 other_u.display_name AS other_user_display_name, 
                 other_u.avatar AS other_user_avatar, 
                 other_u.status AS other_user_status,
-                -- Unread count (top-level messages only — thread replies don't surface here)
+                -- Unread count (replies count too — they're shown inline, not hidden in a thread)
                 (SELECT COUNT(*) FROM Messages m
                  WHERE m.conversation_id = c.id
                    AND m.sender_id != ?
                    AND m.is_deleted = 0
-                   AND m.parent_id IS NULL
                    AND m.created_at > COALESCE(p.last_read_at, '1970-01-01')) AS unread_count
             FROM Conversations c
             INNER JOIN Participants p ON c.id = p.conversation_id
             OUTER APPLY (
                 SELECT TOP 1 m2.id, m2.content, m2.message_type, m2.created_at, m2.sender_id
                 FROM Messages m2
-                WHERE m2.conversation_id = c.id AND m2.is_deleted = 0 AND m2.parent_id IS NULL
+                WHERE m2.conversation_id = c.id AND m2.is_deleted = 0
                 ORDER BY m2.created_at DESC
             ) lm
             LEFT JOIN Users lmu ON lm.sender_id = lmu.id

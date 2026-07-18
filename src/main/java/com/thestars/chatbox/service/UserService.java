@@ -99,6 +99,16 @@ public class UserService {
         clearCacheByUserId(userId);
     }
 
+    /** Update a user's own display name and/or avatar. Pass null for a field to leave it unchanged. */
+    public User updateProfile(Long userId, String displayName, String avatar) {
+        User current = userDAO.findById(userId).orElseThrow(() -> new IllegalArgumentException("User not found"));
+        String newDisplayName = displayName != null ? displayName : current.getDisplayName();
+        String newAvatar = avatar != null ? avatar : current.getAvatar();
+        userDAO.updateProfile(userId, newDisplayName, newAvatar);
+        clearCacheByUserId(userId);
+        return userDAO.findById(userId).orElseThrow();
+    }
+
     // ── Token Session Management for Multi-Tab Autonomy ──
     private final java.util.Map<String, String> tokenToEmailMap = new java.util.concurrent.ConcurrentHashMap<>();
 

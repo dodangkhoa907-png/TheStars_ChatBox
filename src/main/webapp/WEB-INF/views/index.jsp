@@ -13,8 +13,18 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
+    <!-- Apply the saved appearance before first paint to avoid a theme flash -->
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('chatbox_theme');
+                if (t && t !== 'galaxy') document.documentElement.setAttribute('data-theme', t);
+            } catch (e) {}
+        })();
+    </script>
+
     <!-- Stylesheet -->
-    <link rel="stylesheet" href="${pageContext.request.contextPath}/css/style.css">
+    <link rel="stylesheet" href="${pageContext.request.contextPath}/css/style.css?v=themes-1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
 </head>
 <body>
@@ -62,6 +72,7 @@
                         <button class="icon-btn" id="btn-open-admin" title="Admin Panel">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
                         </button>
+
                         <button class="icon-btn" id="btn-logout" title="Logout" style="color:var(--red)">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                         </button>
@@ -158,7 +169,16 @@
                     <button class="icon-btn icon-btn--circle" id="btn-attach" title="Attach File">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
-                    <div class="input-glass glass-inset">
+                    <div class="input-glass glass-inset input-glass--stacked">
+                        <div class="reply-preview hidden" id="reply-preview-bar">
+                            <div class="reply-preview__body">
+                                <span class="reply-preview__name" id="reply-preview-name"></span>
+                                <span class="reply-preview__text" id="reply-preview-text"></span>
+                            </div>
+                            <button class="icon-btn icon-btn--sm" id="btn-cancel-reply" title="Cancel reply" type="button">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                        </div>
                         <input type="text" id="msg-input" placeholder="Type something..." autocomplete="off">
                     </div>
                     <button class="btn-send" id="btn-send" title="Send">
@@ -186,37 +206,17 @@
                 <section class="resource-section">
                     <h4 class="resource-section__title">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                        Images <span class="badge" id="badge-images">6</span>
+                        Images <span class="badge" id="badge-images">0</span>
                     </h4>
                     <div class="images-grid" id="images-grid"></div>
                 </section>
                 <section class="resource-section">
                     <h4 class="resource-section__title">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                        Shared Files <span class="badge" id="badge-files">4</span>
+                        Shared Files <span class="badge" id="badge-files">0</span>
                     </h4>
                     <ul class="files-list" id="files-list"></ul>
                 </section>
-            </aside>
-
-            <!-- ──────── COL 4: THREAD SIDEBAR ──────── -->
-            <aside class="col-thread glass-panel hidden" id="col-thread">
-                <header class="resources-header">
-                    <h3>Thread</h3>
-                    <button class="icon-btn icon-btn--sm" id="btn-close-thread" title="Close">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    </button>
-                </header>
-                <div class="thread-parent" id="thread-parent"></div>
-                <div class="thread-messages" id="thread-messages"></div>
-                <footer class="chat-footer glass-panel-thin thread-footer">
-                    <div class="input-glass glass-inset">
-                        <input type="text" id="thread-input" placeholder="Reply in thread..." autocomplete="off">
-                    </div>
-                    <button class="btn-send" id="btn-thread-send" title="Send">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                    </button>
-                </footer>
             </aside>
         </div>
     </section>
@@ -231,13 +231,86 @@
                 <button class="icon-btn" id="btn-close-admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
             </header>
             <nav class="admin-tabs">
-                <button class="admin-tab active" data-tab="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg> Users</button>
+                <button class="admin-tab active" data-tab="profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> My Profile</button>
+                <button class="admin-tab" data-tab="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg> Users</button>
                 <button class="admin-tab" data-tab="groups"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> Groups</button>
                 <button class="admin-tab" data-tab="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> Statistics</button>
             </nav>
             <div class="admin-body">
+                <!-- Tab: My Profile -->
+                <div class="admin-tab-content active" id="tab-profile">
+                    <div class="profile-avatar-row">
+                        <div class="profile-avatar-wrap" id="profile-avatar-wrap" title="Change photo">
+                            <img src="" alt="Avatar" class="avatar avatar--xl" id="profile-avatar-img">
+                            <div class="profile-avatar-overlay">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                                <span>Change photo</span>
+                            </div>
+                            <input type="file" id="profile-avatar-input" accept="image/*" class="hidden">
+                        </div>
+                        <div class="profile-avatar-meta">
+                            <div class="profile-avatar-name" id="profile-display-name-preview">—</div>
+                            <div class="profile-avatar-email" id="profile-email-preview">—</div>
+                        </div>
+                    </div>
+
+                    <div class="profile-field">
+                        <label class="form-label" for="profile-display-name-input">Display name</label>
+                        <div class="profile-field__row">
+                            <input type="text" class="form-input glass-inset" id="profile-display-name-input" maxlength="70">
+                            <button class="btn-primary btn-sm" id="btn-save-profile-name">Save</button>
+                        </div>
+                    </div>
+
+                    <div class="profile-readonly-grid">
+                        <div><span class="profile-readonly-label">Team</span><span id="profile-team-value">—</span></div>
+                        <div><span class="profile-readonly-label">Role</span><span id="profile-role-value">—</span></div>
+                    </div>
+
+                    <div class="glass-divider"></div>
+
+                    <h4 class="resource-section__title">Appearance</h4>
+                    <div class="theme-opt-list" id="profile-theme-list" role="radiogroup" aria-label="Choose an appearance">
+                        <label class="theme-opt">
+                            <input class="theme-opt__input" type="radio" name="app-theme" value="galaxy">
+                            <span class="theme-opt__swatch theme-opt__swatch--galaxy"></span>
+                            <span class="theme-opt__content">
+                                <span class="theme-opt__name">Galaxy</span>
+                                <span class="theme-opt__desc">Deep space · neon blue</span>
+                            </span>
+                            <svg class="theme-opt__check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+                        </label>
+                        <label class="theme-opt">
+                            <input class="theme-opt__input" type="radio" name="app-theme" value="aqua">
+                            <span class="theme-opt__swatch theme-opt__swatch--aqua"></span>
+                            <span class="theme-opt__content">
+                                <span class="theme-opt__name">Aqua</span>
+                                <span class="theme-opt__desc">Clean light · mint teal</span>
+                            </span>
+                            <svg class="theme-opt__check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+                        </label>
+                        <label class="theme-opt">
+                            <input class="theme-opt__input" type="radio" name="app-theme" value="sand">
+                            <span class="theme-opt__swatch theme-opt__swatch--sand"></span>
+                            <span class="theme-opt__content">
+                                <span class="theme-opt__name">Sand</span>
+                                <span class="theme-opt__desc">Warm cream · moss khaki</span>
+                            </span>
+                            <svg class="theme-opt__check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+                        </label>
+                        <label class="theme-opt">
+                            <input class="theme-opt__input" type="radio" name="app-theme" value="graphite">
+                            <span class="theme-opt__swatch theme-opt__swatch--graphite"></span>
+                            <span class="theme-opt__content">
+                                <span class="theme-opt__name">Graphite</span>
+                                <span class="theme-opt__desc">Mid dark · vivid purple</span>
+                            </span>
+                            <svg class="theme-opt__check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+                        </label>
+                    </div>
+                </div>
                 <!-- Tab: Users -->
-                <div class="admin-tab-content active" id="tab-users">
+                <div class="admin-tab-content" id="tab-users">
                     <div class="admin-toolbar">
                         <div class="search-box glass-inset search-box--sm">
                             <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -348,6 +421,26 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════
+         PROFILE / GROUP INFO VIEW MODAL (click the chat header to open)
+         ═══════════════════════════════════════════════════════════ -->
+    <div class="modal-overlay hidden" id="modal-profile-view">
+        <div class="glass-card modal-card profile-view-card">
+            <header class="modal-header"><h3 id="profile-view-title">Profile</h3>
+                <button class="icon-btn icon-btn--sm" id="btn-close-profile-view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            </header>
+            <div class="modal-body profile-view-body">
+                <div class="profile-view-hero">
+                    <img src="" alt="" class="avatar avatar--xl" id="profile-view-avatar">
+                    <div class="profile-view-name" id="profile-view-name">—</div>
+                    <div class="profile-view-sub" id="profile-view-sub">—</div>
+                </div>
+                <!-- Populated as either a user's info rows or a group's member list -->
+                <div id="profile-view-details"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
          BROWSE GROUPS MODAL
          ═══════════════════════════════════════════════════════════ -->
     <div class="modal-overlay hidden" id="modal-browse-groups">
@@ -414,6 +507,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.0/purify.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script src="${pageContext.request.contextPath}/js/app.js"></script>
+    <script src="${pageContext.request.contextPath}/js/app.js?v=themes-1"></script>
 </body>
 </html>

@@ -5,7 +5,23 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2080dc0f-47f0-45d2-ad1d-ba895fa82100" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/compiler.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/compiler.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/AuthController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/AuthController.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/ChatController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/ChatController.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/MessageController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/MessageController.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/ConversationDAO.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/ConversationDAO.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/MessageDAO.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/MessageDAO.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/UserDAO.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/dao/UserDAO.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/model/Message.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/model/Message.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/model/User.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/model/User.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/FileService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/FileService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/MessageService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/MessageService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/UserService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/UserService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/webapp/WEB-INF/views/index.jsp" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/webapp/WEB-INF/views/index.jsp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/webapp/css/style.css" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/webapp/css/style.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/webapp/js/app.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/webapp/js/app.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target/classes/application.properties" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/application.properties" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

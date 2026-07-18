@@ -125,6 +125,16 @@ public class UserDAO {
     }
 
     /**
+     * Update a user's own editable profile fields (display name + avatar).
+     * Deliberately narrow — unlike {@link #update(User)} this can't accidentally
+     * touch password/role/status by passing a stale User object.
+     */
+    public void updateProfile(Long userId, String displayName, String avatar) {
+        String sql = "UPDATE Users SET display_name = ?, avatar = ?, updated_at = GETDATE() WHERE id = ?";
+        jdbcTemplate.update(sql, displayName, avatar, userId);
+    }
+
+    /**
      * Update the user's last login IP address.
      */
     public void updateLastLoginIp(Long userId, String ipAddress) {

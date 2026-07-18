@@ -85,9 +85,12 @@ const ChatAppController = (() => {
         setupEmptyStateCta();
         setupInputHandlers();
         setupPresenceTracking();
-        setupThreadInput();
+        setupReplyPreview();
         setupMentionAutocomplete();
         setupGroupMembership();
+        setupThemeSwitcher();
+        setupProfileTab();
+        setupProfileView();
 
         // Load initial conversations
         await loadConversations();
@@ -221,7 +224,6 @@ const ChatAppController = (() => {
             subscriptions[`typing-${id}`].unsubscribe();
             subscriptions[`react-${id}`].unsubscribe();
             subscriptions[`readstate-${id}`]?.unsubscribe();
-            subscriptions[`threadupdate-${id}`]?.unsubscribe();
         }
 
         // New messages are handled by subscribeToAllConversationMessages() for every
@@ -242,12 +244,6 @@ const ChatAppController = (() => {
         // 3. Read-receipt tick updates (delivered / read)
         subscriptions[`readstate-${id}`] = stompClient.subscribe(`/topic/conversation/${id}/read-state`, (msg) => {
             handleReadStateEvent(JSON.parse(msg.body));
-        });
-
-        // 4. Thread reply-count updates on the original message's badge
-        subscriptions[`threadupdate-${id}`] = stompClient.subscribe(`/topic/conversation/${id}/thread-update`, (msg) => {
-            const evt = JSON.parse(msg.body);
-            updateReplyCountBadge(evt.parentId, evt.replyCount);
         });
     }
 
@@ -292,6 +288,7 @@ const ChatAppController = (() => {
         if (openAdmin && adminOverlay) {
             openAdmin.addEventListener('click', () => {
                 adminOverlay.classList.remove('hidden');
+                loadProfileTab();
                 loadAdminUsers();
                 loadAdminGroups();
                 loadAdminStats();
@@ -487,7 +484,7 @@ const ChatAppController = (() => {
     // ── Select Conversation ──
     async function selectConversation(id) {
         activeConversationId = id;
-        closeThread();
+        cancelReply();
 
         const dashboard = $('.dashboard');
         if (dashboard) {
@@ -574,8 +571,8 @@ const ChatAppController = (() => {
         loadConversations();
     }
 
-    function appendMessageHtml(msg, container, inThread) {
-        const scrollContainer = container || $('#messages-scroll');
+    function appendMessageHtml(msg) {
+        const scrollContainer = $('#messages-scroll');
         if (!scrollContainer) return;
 
         if (msg.messageType === 'SYSTEM') {
@@ -600,11 +597,19 @@ const ChatAppController = (() => {
         const avatarUrl = msg.sender?.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(msg.sender?.displayName || 'User');
         const timeStr = formatTime(msg.createdAt);
 
+        const replyQuoteHtml = msg.replyToSenderName ? `
+            <div class="msg__reply-quote">
+                <span class="msg__reply-quote-name">${escapeHtml(msg.replyToSenderName)}</span>
+                <div class="msg__reply-quote-text">${escapeHtml(msg.replyToContent || '')}</div>
+            </div>
+        ` : '';
+
         let bubbleContent = '';
 
         if (msg.messageType === 'MEETING_LINK' || isMeetingUrl(msg.content)) {
             bubbleContent = `
                 <div class="meeting-card">
+                    ${replyQuoteHtml}
                     <div class="meeting-card__top">
                         <div class="meeting-card__icon">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
@@ -618,7 +623,7 @@ const ChatAppController = (() => {
                 </div>
             `;
         } else if (msg.messageType === 'IMAGE' && msg.attachments?.length) {
-            bubbleContent = msg.attachments.map(att => 
+            bubbleContent = replyQuoteHtml + msg.attachments.map(att =>
                 `<img src="${contextPath}${att.fileUrl}" class="message-image" style="max-width: 260px; border-radius: 12px; margin-top: 4px;" alt="Image">`
             ).join('');
         } else if (msg.messageType === 'FILE' && msg.attachments?.length) {
@@ -626,6 +631,7 @@ const ChatAppController = (() => {
             bubbleContent = `
                 <div class="msg__bubble">
                     <div class="msg__sender">${escapeHtml(msg.sender?.displayName)}</div>
+                    ${replyQuoteHtml}
                     <div>📎 <a href="${contextPath}/api/files/${att.id}" target="_blank" style="color:var(--neon-light); text-decoration:underline;">${escapeHtml(att.fileName)}</a></div>
                 </div>
             `;
@@ -633,6 +639,7 @@ const ChatAppController = (() => {
             bubbleContent = `
                 <div class="msg__bubble">
                     <div class="msg__sender">${escapeHtml(msg.sender?.displayName)}</div>
+                    ${replyQuoteHtml}
                     <div class="msg__rich-text">${renderRichText(highlightMentions(msg.content))}</div>
                 </div>
             `;
@@ -655,7 +662,7 @@ const ChatAppController = (() => {
             statusHtml = renderTickHtml(msg);
         }
 
-        const threadRowHtml = (msg.id && !inThread) ? renderThreadButtonHtml(msg) : '';
+        const replyBtnHtml = msg.id ? renderReplyButtonHtml() : '';
 
         msgDiv.innerHTML = `
             ${!isSelf ? `<img src="${avatarUrl}" alt="Avatar" class="msg__avatar">` : ''}
@@ -663,7 +670,7 @@ const ChatAppController = (() => {
                 ${bubbleContent}
                 <div class="msg__time">${timeStr} ${statusHtml}</div>
                 ${reactionsHtml}
-                ${threadRowHtml}
+                ${replyBtnHtml}
             </div>
         `;
 
@@ -680,22 +687,17 @@ const ChatAppController = (() => {
                 toggleReaction(msg.id, '👍');
             });
 
-            if (!inThread) {
-                msgDiv.querySelector('.msg__thread-btn')?.addEventListener('click', () => openThread(msg));
-            }
+            msgDiv.querySelector('.msg__reply-btn')?.addEventListener('click', () => startReply(msg));
         }
 
         scrollContainer.appendChild(msgDiv);
         enhanceCodeBlocks(msgDiv);
     }
 
-    function renderThreadButtonHtml(msg) {
-        const count = msg.replyCount || 0;
-        const label = count > 0 ? `<span>${count} ${count === 1 ? 'reply' : 'replies'}</span>` : '';
+    function renderReplyButtonHtml() {
         return `
-            <button class="msg__thread-btn ${count > 0 ? 'has-replies' : ''}" type="button" title="Reply in thread">
+            <button class="msg__reply-btn" type="button" title="Reply">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-                ${label}
             </button>
         `;
     }
@@ -721,10 +723,18 @@ const ChatAppController = (() => {
             // Remove old double click listeners (if any) and add new one
             const newBubble = bubble.cloneNode(true);
             bubble.parentNode.replaceChild(newBubble, bubble);
-            
+
             newBubble.addEventListener('dblclick', () => {
                 toggleReaction(msg.id, '👍');
             });
+        }
+
+        // The optimistic render had no real id yet, so the reply button couldn't
+        // be added — add it now that the message has one.
+        const body = el.querySelector('.msg__body');
+        if (body && !body.querySelector('.msg__reply-btn')) {
+            body.insertAdjacentHTML('beforeend', renderReplyButtonHtml());
+            body.querySelector('.msg__reply-btn')?.addEventListener('click', () => startReply(msg));
         }
     }
 
@@ -765,108 +775,251 @@ const ChatAppController = (() => {
         statusEl.innerHTML = `<span class="tick ${cls}">${glyph}</span>`;
     }
 
-    // ── Threads ──
-    let activeThreadParentId = null;
-    let threadSubscription = null;
+    // ── Inline Reply (quote a message from the main composer, Messenger/Zalo-style) ──
+    let replyingTo = null; // { id, senderName, content } or null
 
-    function setupThreadInput() {
-        const input = $('#thread-input');
-        const sendBtn = $('#btn-thread-send');
-        const btnClose = $('#btn-close-thread');
+    function startReply(msg) {
+        if (!msg.id) return; // can't quote a message that hasn't been assigned a real id yet
+        replyingTo = {
+            id: msg.id,
+            senderName: msg.sender?.displayName || 'Unknown',
+            content: msg.content || ''
+        };
+        renderReplyPreview();
+        $('#msg-input')?.focus();
+    }
 
-        function sendThreadReply() {
-            if (!input || !activeThreadParentId || !stompClient?.connected) return;
-            const text = input.value.trim();
-            if (!text) return;
+    function cancelReply() {
+        replyingTo = null;
+        renderReplyPreview();
+    }
 
-            stompClient.send(`/app/chat.replyThread/${activeThreadParentId}`, {}, JSON.stringify({ content: text }));
-            input.value = '';
+    function renderReplyPreview() {
+        const bar = $('#reply-preview-bar');
+        if (!bar) return;
+
+        if (!replyingTo) {
+            bar.classList.add('hidden');
+            return;
         }
+        $('#reply-preview-name').textContent = `Replying to ${replyingTo.senderName}`;
+        $('#reply-preview-text').textContent = replyingTo.content;
+        bar.classList.remove('hidden');
+    }
 
-        if (sendBtn) sendBtn.addEventListener('click', sendThreadReply);
-        if (input) {
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    sendThreadReply();
-                }
+    function setupReplyPreview() {
+        $('#btn-cancel-reply')?.addEventListener('click', cancelReply);
+    }
+
+    // ── Appearance / Theme Switcher ──
+    const THEME_KEY = 'chatbox_theme';
+    const THEMES = ['galaxy', 'aqua', 'sand', 'graphite'];
+
+    function applyTheme(theme) {
+        // Galaxy is the default :root palette — represented by no data-theme attribute.
+        if (theme === 'galaxy') {
+            document.documentElement.removeAttribute('data-theme');
+        } else {
+            document.documentElement.setAttribute('data-theme', theme);
+        }
+    }
+
+    // Lives inline in the "My Profile" tab of the Admin Panel now (not a header
+    // popover), so this just needs to apply the saved theme on load and keep the
+    // radio list in sync — no open/close mechanics.
+    function setupThemeSwitcher() {
+        const list = $('#profile-theme-list');
+        if (!list) return;
+
+        let saved = 'galaxy';
+        try {
+            const t = localStorage.getItem(THEME_KEY);
+            if (THEMES.includes(t)) saved = t;
+        } catch (e) {}
+
+        // Reflect the active theme on its option (an explicit class, so the
+        // selected-state styling never depends on :has() invalidation quirks).
+        const markActive = (value) => {
+            list.querySelectorAll('.theme-opt').forEach(opt => {
+                const input = opt.querySelector('input[name="app-theme"]');
+                opt.classList.toggle('is-active', input && input.value === value);
             });
-        }
-        if (btnClose) btnClose.addEventListener('click', closeThread);
-    }
+        };
 
-    async function openThread(parentMessage) {
-        if (!parentMessage.id) return;
-        activeThreadParentId = parentMessage.id;
-        $('#col-thread')?.classList.remove('hidden');
+        applyTheme(saved);
+        const activeRadio = list.querySelector(`input[name="app-theme"][value="${saved}"]`);
+        if (activeRadio) activeRadio.checked = true;
+        markActive(saved);
 
-        const data = await api(`/api/conversations/${activeConversationId}/messages/${parentMessage.id}/thread`);
-        if (!data || activeThreadParentId !== parentMessage.id) return;
-
-        renderThreadParent(data.parent);
-        const container = $('#thread-messages');
-        if (container) {
-            container.innerHTML = '';
-            data.replies.forEach(reply => appendMessageHtml(reply, container, true));
-            container.scrollTop = container.scrollHeight;
-        }
-
-        subscribeToThread(parentMessage.id);
-        $('#thread-input')?.focus();
-    }
-
-    function closeThread() {
-        $('#col-thread')?.classList.add('hidden');
-        threadSubscription?.unsubscribe();
-        threadSubscription = null;
-        activeThreadParentId = null;
-    }
-
-    function subscribeToThread(parentId) {
-        if (!stompClient?.connected) return;
-        threadSubscription?.unsubscribe();
-        threadSubscription = stompClient.subscribe(`/topic/thread/${parentId}`, (msg) => {
-            const reply = JSON.parse(msg.body);
-            if (activeThreadParentId !== parentId) return;
-
-            const container = $('#thread-messages');
-            if (!container) return;
-
-            if (reply.clientMsgId) {
-                const pendingEl = container.querySelector(`.msg[data-client-msg-id="${reply.clientMsgId}"]`);
-                if (pendingEl) { updatePendingMessage(pendingEl, reply); return; }
-            }
-            appendMessageHtml(reply, container, true);
-            container.scrollTop = container.scrollHeight;
+        list.querySelectorAll('input[name="app-theme"]').forEach(input => {
+            input.addEventListener('change', () => {
+                if (!input.checked) return;
+                applyTheme(input.value);
+                markActive(input.value);
+                try { localStorage.setItem(THEME_KEY, input.value); } catch (e) {}
+            });
         });
     }
 
-    function renderThreadParent(parent) {
-        const el = $('#thread-parent');
-        if (!el || !parent) return;
-
-        const avatarUrl = parent.sender?.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(parent.sender?.displayName || 'User');
-        el.innerHTML = `
-            <div class="thread-parent__meta">
-                <img src="${avatarUrl}" alt="">
-                <span class="thread-parent__name">${escapeHtml(parent.sender?.displayName || 'Unknown')}</span>
-                <span class="thread-parent__time">${formatTime(parent.createdAt)}</span>
-            </div>
-            <div class="thread-parent__content">${renderRichText(highlightMentions(parent.content || ''))}</div>
-        `;
-        enhanceCodeBlocks(el);
+    // ── My Profile tab (avatar + display name) ──
+    function loadProfileTab() {
+        if (!currentUser) return;
+        const avatarUrl = currentUser.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.displayName || 'User');
+        $('#profile-avatar-img').src = avatarUrl;
+        $('#profile-display-name-preview').textContent = currentUser.displayName || '';
+        $('#profile-email-preview').textContent = currentUser.email || '';
+        $('#profile-display-name-input').value = currentUser.displayName || '';
+        $('#profile-team-value').textContent = currentUser.team || '—';
+        $('#profile-role-value').textContent = currentUser.role || '—';
     }
 
-    function updateReplyCountBadge(messageId, count) {
-        const msgDiv = document.querySelector(`.msg[data-message-id="${messageId}"]`);
-        const btn = msgDiv?.querySelector('.msg__thread-btn');
-        if (!btn) return;
+    // Refresh every place currentUser's name/avatar is shown, after a profile edit.
+    function applyCurrentUserToUI() {
+        if ($('#sidebar-user-avatar')) {
+            $('#sidebar-user-avatar').src = currentUser.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.displayName);
+        }
+        if ($('#sidebar-user-name')) {
+            $('#sidebar-user-name').textContent = currentUser.displayName;
+        }
+        loadProfileTab();
+    }
 
-        btn.classList.add('has-replies');
-        btn.innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-            <span>${count} ${count === 1 ? 'reply' : 'replies'}</span>
+    function setupProfileTab() {
+        const avatarWrap = $('#profile-avatar-wrap');
+        const avatarInput = $('#profile-avatar-input');
+        const nameInput = $('#profile-display-name-input');
+        const saveNameBtn = $('#btn-save-profile-name');
+        if (!avatarWrap || !avatarInput) return;
+
+        avatarWrap.addEventListener('click', () => avatarInput.click());
+
+        avatarInput.addEventListener('change', async () => {
+            const file = avatarInput.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+            const token = sessionStorage.getItem('chat_token');
+
+            const res = await fetch(contextPath + '/api/auth/me/avatar', {
+                method: 'POST',
+                headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+                body: formData
+            });
+            avatarInput.value = '';
+
+            if (res.ok) {
+                currentUser = await res.json();
+                applyCurrentUserToUI();
+                showToast('Profile photo updated.', 'success');
+            } else {
+                const err = await res.json().catch(() => ({}));
+                showToast(err.error || 'Could not update photo.', 'error');
+            }
+        });
+
+        saveNameBtn?.addEventListener('click', async () => {
+            const name = nameInput.value.trim();
+            if (!name || name === currentUser.displayName) return;
+
+            const updated = await api('/api/auth/me', { method: 'PUT', body: JSON.stringify({ displayName: name }) });
+            if (updated) {
+                currentUser = updated;
+                applyCurrentUserToUI();
+                showToast('Display name updated.', 'success');
+            } else {
+                showToast('Could not update display name.', 'error');
+            }
+        });
+    }
+
+    // ── Chat header → view a person's profile, or a group's info ──
+    function setupProfileView() {
+        const left = document.querySelector('.chat-header__left');
+        const modal = $('#modal-profile-view');
+        const closeBtn = $('#btn-close-profile-view');
+        if (!left || !modal) return;
+
+        left.addEventListener('click', (e) => {
+            if (e.target.closest('#btn-back-to-sidebar')) return; // mobile back button keeps its own behavior
+            if (!activeConversationId) return;
+            const conv = conversations.find(c => c.id === activeConversationId);
+            if (!conv) return;
+            if (conv.type === 'GROUP') {
+                openGroupInfoView(conv);
+            } else {
+                openUserProfileView(conv);
+            }
+        });
+
+        closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.classList.add('hidden');
+        });
+    }
+
+    async function openUserProfileView(conv) {
+        if (!conv.otherUserId) return;
+        const modal = $('#modal-profile-view');
+
+        $('#profile-view-title').textContent = 'Profile';
+        $('#profile-view-avatar').src = conv.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(conv.name);
+        $('#profile-view-name').textContent = conv.name;
+        $('#profile-view-sub').innerHTML = '';
+        $('#profile-view-details').innerHTML = '';
+        modal.classList.remove('hidden');
+
+        const user = await api(`/api/conversations/users/${conv.otherUserId}`);
+        if (!user || modal.classList.contains('hidden')) return;
+
+        const statusClass = user.status === 'ONLINE' ? 'dot--online' : (user.status === 'AWAY' ? 'dot--away' : 'dot--offline');
+        const statusLabel = user.status === 'ONLINE' ? 'Online' : (user.status === 'AWAY' ? 'Away' : 'Offline');
+
+        $('#profile-view-avatar').src = user.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.displayName);
+        $('#profile-view-name').textContent = user.displayName;
+        $('#profile-view-sub').innerHTML = `<i class="dot ${statusClass}"></i> ${statusLabel}`;
+        $('#profile-view-details').innerHTML = `
+            <div class="profile-readonly-grid" style="grid-template-columns:1fr;">
+                <div><span class="profile-readonly-label">Email</span><span>${escapeHtml(user.email || '—')}</span></div>
+                <div><span class="profile-readonly-label">Team</span><span>${escapeHtml(user.team || '—')}</span></div>
+            </div>
         `;
+    }
+
+    async function openGroupInfoView(conv) {
+        const modal = $('#modal-profile-view');
+
+        $('#profile-view-title').textContent = 'Group Info';
+        $('#profile-view-avatar').src = conv.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(conv.name);
+        $('#profile-view-name').textContent = conv.name;
+        $('#profile-view-sub').textContent = 'Group Chat';
+        $('#profile-view-details').innerHTML = '<p style="text-align:center; color:var(--text-muted); font-size:12px;">Loading members…</p>';
+        modal.classList.remove('hidden');
+
+        const full = await api(`/api/conversations/${conv.id}`);
+        if (!full || !full.participants || modal.classList.contains('hidden')) return;
+
+        $('#profile-view-sub').textContent = `Group Chat · ${full.participants.length} member${full.participants.length === 1 ? '' : 's'}`;
+
+        const list = document.createElement('ul');
+        list.className = 'friends-list profile-view-details-list';
+        full.participants.forEach(p => {
+            if (!p.user) return;
+            const li = document.createElement('li');
+            li.className = 'friend-item';
+            li.innerHTML = `
+                <div class="friend-item__info">
+                    <img src="${p.user.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(p.user.displayName)}" alt="">
+                    <div>
+                        <div class="friend-item__name">${escapeHtml(p.user.displayName)}</div>
+                        <div class="friend-item__sub">${ROLE_LABELS[p.role] || 'Member'}</div>
+                    </div>
+                </div>
+            `;
+            list.appendChild(li);
+        });
+        $('#profile-view-details').innerHTML = '';
+        $('#profile-view-details').appendChild(list);
     }
 
     // ── Input & Send Handlers ──
@@ -971,6 +1124,7 @@ const ChatAppController = (() => {
 
             const isMeeting = isMeetingUrl(text);
             const clientMsgId = 'client-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+            const parentId = replyingTo?.id || null;
 
             // Create optimistic local message object
             const tempMessage = {
@@ -981,7 +1135,9 @@ const ChatAppController = (() => {
                 messageType: isMeeting ? 'MEETING_LINK' : 'TEXT',
                 createdAt: new Date().toISOString(),
                 sender: currentUser,
-                isPending: true
+                isPending: true,
+                replyToSenderName: replyingTo?.senderName,
+                replyToContent: replyingTo?.content
             };
 
             // Immediately append to UI
@@ -992,11 +1148,13 @@ const ChatAppController = (() => {
             stompClient.send(`/app/chat.send/${activeConversationId}`, {}, JSON.stringify({
                 content: text,
                 messageType: isMeeting ? 'MEETING_LINK' : 'TEXT',
-                clientMsgId: clientMsgId
+                clientMsgId: clientMsgId,
+                parentId: parentId
             }));
 
             input.value = '';
             input.focus();
+            cancelReply();
         }
 
         if (sendBtn) sendBtn.addEventListener('click', sendCurrentMessage);
@@ -1084,6 +1242,9 @@ const ChatAppController = (() => {
 
         // Render Images
         $('#badge-images').textContent = data.images.length;
+        if (data.images.length === 0) {
+            imageGrid.innerHTML = '<p class="resource-section__empty">No images shared yet.</p>';
+        }
         data.images.forEach(img => {
             const thumb = document.createElement('div');
             thumb.className = 'img-thumb';
@@ -1093,6 +1254,9 @@ const ChatAppController = (() => {
 
         // Render Files
         $('#badge-files').textContent = data.files.length;
+        if (data.files.length === 0) {
+            fileList.innerHTML = '<li class="resource-section__empty">No files shared yet.</li>';
+        }
         data.files.forEach(file => {
             const li = document.createElement('li');
             const ext = file.fileName.split('.').pop().toLowerCase();

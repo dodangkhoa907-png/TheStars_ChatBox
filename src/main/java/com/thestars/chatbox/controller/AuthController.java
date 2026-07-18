@@ -1,11 +1,14 @@
 package com.thestars.chatbox.controller;
 
 import com.thestars.chatbox.model.User;
+import com.thestars.chatbox.service.FileService;
 import com.thestars.chatbox.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import java.io.IOException;
 import java.security.Principal;
 import java.util.Map;
 import java.util.Optional;
@@ -19,10 +22,12 @@ public class AuthController {
 
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
+    private final FileService fileService;
 
-    public AuthController(UserService userService, PasswordEncoder passwordEncoder) {
+    public AuthController(UserService userService, PasswordEncoder passwordEncoder, FileService fileService) {
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
+        this.fileService = fileService;
     }
 
     @PostMapping("/login")
@@ -110,6 +115,50 @@ public class AuthController {
         userService.updateLastLoginIp(user.get().getId(), ip);
 
         return ResponseEntity.ok(user.get());
+    }
+
+    /**
+     * PUT /api/auth/me — Update the current user's own display name.
+     * Body: { "displayName": "New Name" }
+     */
+    @PutMapping("/me")
+    public ResponseEntity<?> updateCurrentUser(@RequestBody Map<String, String> payload, Principal principal) {
+        if (principal == null) return ResponseEntity.status(401).build();
+
+        String displayName = payload.get("displayName");
+        if (displayName == null || displayName.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Display name is required"));
+        }
+        if (displayName.length() > 70) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Full name must be under 70 characters"));
+        }
+
+        Optional<User> user = userService.findByEmail(principal.getName());
+        if (user.isEmpty()) return ResponseEntity.status(401).build();
+
+        User updated = userService.updateProfile(user.get().getId(), displayName.trim(), null);
+        return ResponseEntity.ok(updated);
+    }
+
+    /**
+     * POST /api/auth/me/avatar — Replace the current user's profile picture.
+     */
+    @PostMapping("/me/avatar")
+    public ResponseEntity<?> updateAvatar(@RequestParam("file") MultipartFile file, Principal principal) {
+        if (principal == null) return ResponseEntity.status(401).build();
+
+        Optional<User> user = userService.findByEmail(principal.getName());
+        if (user.isEmpty()) return ResponseEntity.status(401).build();
+
+        try {
+            String avatarUrl = fileService.storeAvatar(file);
+            User updated = userService.updateProfile(user.get().getId(), null, avatarUrl);
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (IOException e) {
+            return ResponseEntity.status(500).body(Map.of("error", "Avatar upload failed: " + e.getMessage()));
+        }
     }
 
     /**

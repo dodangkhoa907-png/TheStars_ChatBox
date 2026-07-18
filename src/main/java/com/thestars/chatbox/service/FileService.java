@@ -71,6 +71,31 @@ public class FileService {
     }
 
     /**
+     * Store a profile avatar image and return its public URL. Unlike
+     * {@link #uploadFile}, this isn't linked to a message/Attachment row —
+     * a profile picture is just a file the User row points at directly.
+     */
+    public String storeAvatar(MultipartFile file) throws IOException {
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new IllegalArgumentException("Avatar must be an image file");
+        }
+
+        String originalFilename = file.getOriginalFilename();
+        String extension = "";
+        if (originalFilename != null && originalFilename.contains(".")) {
+            extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+        }
+        String storedFilename = UUID.randomUUID().toString() + extension;
+
+        Path targetPath = uploadPath.resolve(storedFilename);
+        Files.copy(file.getInputStream(), targetPath);
+
+        log.info("Avatar uploaded: {} -> {} ({} bytes)", originalFilename, storedFilename, file.getSize());
+        return "/uploads/" + storedFilename;
+    }
+
+    /**
      * Get the filesystem path for a stored file.
      */
     public Optional<Path> getFilePath(String filename) {
