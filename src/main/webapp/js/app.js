@@ -26,6 +26,19 @@ const ChatAppController = (() => {
     const TYPING_DEBOUNCE = 1000;
     const TYPING_INDICATOR_DURATION = 3000;
 
+    // Resolves a user/conversation avatar for use as an <img src>. Google/ui-avatars
+    // avatars are already-absolute URLs and must be left alone; a self-uploaded
+    // avatar comes back from the server as a root-relative path like "/uploads/x.jpg"
+    // and needs the app's context path prepended — every message/resource image
+    // already did this, but avatars were missing it everywhere, so an uploaded
+    // avatar 404'd (broken image icon) on any deployment not served at "/".
+    function resolveAvatarUrl(avatar, fallbackName) {
+        if (avatar) {
+            return /^https?:\/\//i.test(avatar) ? avatar : contextPath + avatar;
+        }
+        return 'https://ui-avatars.com/api/?name=' + encodeURIComponent(fallbackName || 'User');
+    }
+
     // ── API Helper ──
     async function api(url, options = {}) {
         const fullUrl = contextPath + url;
@@ -68,7 +81,7 @@ const ChatAppController = (() => {
 
         // Populate User Info in UI
         if ($('#sidebar-user-avatar')) {
-            $('#sidebar-user-avatar').src = currentUser.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.displayName);
+            $('#sidebar-user-avatar').src = resolveAvatarUrl(currentUser.avatar, currentUser.displayName);
         }
         if ($('#sidebar-user-name')) {
             $('#sidebar-user-name').textContent = currentUser.displayName;
@@ -327,23 +340,36 @@ const ChatAppController = (() => {
         const resultsList = $('#global-search-list');
 
         if (searchInput && resultsBox && resultsList) {
-            searchInput.addEventListener('input', async (e) => {
+            let searchDebounceTimer = null;
+            let searchSeq = 0;
+
+            searchInput.addEventListener('input', (e) => {
                 const query = e.target.value.toLowerCase().trim();
-                
-                // 1. Filter local active conversations
+
+                // 1. Filter local active conversations — cheap and instant, no debounce needed
                 $$('.chat-list li').forEach(item => {
                     const name = item.querySelector('.chat-name').textContent.toLowerCase();
                     item.style.display = name.includes(query) ? 'flex' : 'none';
                 });
 
-                // 2. Global search users (Zalo-like)
-                if (!query || query.length < 1) {
+                // 2. Global search users (Zalo-like) — debounced, since each keystroke
+                // otherwise fired a search request plus a friend-status request per
+                // result, racing the previous keystroke's requests with no ordering
+                // guarantee (a slow earlier response could clobber a newer one).
+                clearTimeout(searchDebounceTimer);
+                if (!query) {
                     resultsBox.classList.add('hidden');
                     resultsList.innerHTML = '';
                     return;
                 }
+                searchDebounceTimer = setTimeout(() => runGlobalUserSearch(query), 250);
+            });
 
+            async function runGlobalUserSearch(query) {
+                const seq = ++searchSeq;
                 const users = await api(`/api/conversations/users/search?q=${encodeURIComponent(query)}`) || [];
+                if (seq !== searchSeq) return; // a newer search has since started
+
                 resultsList.innerHTML = '';
 
                 // Filter out self
@@ -359,13 +385,14 @@ const ChatAppController = (() => {
                 const statuses = await Promise.all(
                     others.map(u => api(`/api/friends/status/${u.id}`))
                 );
+                if (seq !== searchSeq) return; // stale again after this second await
 
                 others.forEach((user, idx) => {
                     const rel = statuses[idx] || { status: 'NONE' };
                     const li = document.createElement('li');
                     li.style.cssText = 'display:flex; align-items:center; gap:10px; padding:6px 8px; cursor:pointer; border-radius:6px; transition:background var(--t-fast);';
                     li.innerHTML = `
-                        <img src="${user.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.displayName)}" style="width:28px; height:28px; border-radius:50%;" alt="">
+                        <img src="${resolveAvatarUrl(user.avatar, user.displayName)}" style="width:28px; height:28px; border-radius:50%;" alt="">
                         <div style="display:flex; flex-direction:column; flex:1; min-width:0;">
                             <span style="font-size:13px; font-weight:500; color:var(--text-white);">${escapeHtml(user.displayName)}</span>
                             <span style="font-size:10px; opacity:0.5;">${escapeHtml(user.email)}</span>
@@ -407,7 +434,7 @@ const ChatAppController = (() => {
                 });
 
                 resultsBox.classList.remove('hidden');
-            });
+            }
 
             // Hide on clicking outside
             document.addEventListener('click', (e) => {
@@ -448,44 +475,86 @@ const ChatAppController = (() => {
         const list = $('#chat-list');
         if (!list) return;
 
-        list.innerHTML = '';
-
         const sorted = [...conversations].sort((a, b) => conversationActivityTime(b) - conversationActivityTime(a));
 
+        // Reuse existing <li> nodes by conversation id instead of tearing the whole
+        // list down and rebuilding it — this now runs on every single message sent
+        // or received (see upsertConversationFromMessage), so rebuilding from
+        // scratch each time meant every avatar <img> re-fetching/re-decoding and
+        // the whole sidebar flickering on every message, even ones for other chats.
+        const existing = new Map();
+        list.querySelectorAll(':scope > li[data-id]').forEach(li => existing.set(String(li.dataset.id), li));
+
+        let cursor = null; // insert-after anchor, keeps DOM order matching `sorted`
         sorted.forEach(conv => {
-            const li = document.createElement('li');
-            li.dataset.id = conv.id;
-            if (activeConversationId === conv.id) {
-                li.className = 'active';
+            const key = String(conv.id);
+            let li = existing.get(key);
+            const isNew = !li;
+            if (isNew) {
+                li = document.createElement('li');
+                li.dataset.id = conv.id;
+                li.addEventListener('click', () => selectConversation(conv.id));
+            } else {
+                existing.delete(key);
             }
 
-            if (conv.unreadCount > 0) {
-                li.classList.add('has-unread');
-            }
+            li.className = activeConversationId === conv.id ? 'active' : '';
+            li.classList.toggle('has-unread', conv.unreadCount > 0);
+            li.style.display = ''; // clear any filter left over from search
+
             const unreadBadge = conv.unreadCount > 0 ? `<span class="unread-badge">${conv.unreadCount}</span>` : '';
             const statusClass = presenceDotClass(conv);
             const lastMsgText = conv.lastMessage ? conv.lastMessage.content : 'No messages yet';
             const lastMsgSender = conv.lastMessage ? (conv.lastMessage.sender?.displayName || 'System') : '';
             const preview = lastMsgSender ? `${lastMsgSender}: ${lastMsgText}` : lastMsgText;
             const timeStr = conv.lastMessage ? formatTime(conv.lastMessage.createdAt) : '';
+            const avatarSrc = resolveAvatarUrl(conv.avatar, conv.name);
 
-            li.innerHTML = `
-                <div class="chat-avatar-wrap">
-                    <img src="${conv.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(conv.name)}" alt="Avatar" class="avatar avatar--sm">
-                    <i class="dot ${statusClass}"></i>
-                </div>
-                <div class="chat-meta">
-                    <div class="chat-name">${escapeHtml(conv.name)}</div>
-                    <div class="chat-preview">${escapeHtml(preview)}</div>
-                </div>
-                <div class="chat-time">${timeStr}</div>
-                ${unreadBadge}
-            `;
+            if (isNew) {
+                li.innerHTML = `
+                    <div class="chat-avatar-wrap">
+                        <img src="${avatarSrc}" alt="Avatar" class="avatar avatar--sm">
+                        <i class="dot ${statusClass}"></i>
+                    </div>
+                    <div class="chat-meta">
+                        <div class="chat-name">${escapeHtml(conv.name)}</div>
+                        <div class="chat-preview">${escapeHtml(preview)}</div>
+                    </div>
+                    <div class="chat-time">${timeStr}</div>
+                    ${unreadBadge}
+                `;
+            } else {
+                // Patch fields in place — only touch the <img> src when the avatar
+                // actually changed, so an unrelated update doesn't re-fetch it.
+                const img = li.querySelector('.chat-avatar-wrap img');
+                if (img && img.getAttribute('src') !== avatarSrc) img.src = avatarSrc;
+                li.querySelector('.dot').className = `dot ${statusClass}`;
+                li.querySelector('.chat-name').textContent = conv.name;
+                li.querySelector('.chat-preview').textContent = preview;
+                li.querySelector('.chat-time').textContent = timeStr;
+                const existingBadge = li.querySelector('.unread-badge');
+                if (conv.unreadCount > 0) {
+                    if (existingBadge) existingBadge.textContent = conv.unreadCount;
+                    else li.insertAdjacentHTML('beforeend', unreadBadge);
+                } else if (existingBadge) {
+                    existingBadge.remove();
+                }
+            }
 
-            li.addEventListener('click', () => selectConversation(conv.id));
-
-            list.appendChild(li);
+            // Keep DOM order in sync with `sorted` — appendChild on an existing
+            // node moves it rather than cloning it, so this doesn't disturb nodes
+            // that are already in the right place.
+            if (cursor === null) {
+                list.insertBefore(li, list.firstChild);
+            } else if (cursor.nextSibling !== li) {
+                list.insertBefore(li, cursor.nextSibling);
+            }
+            cursor = li;
         });
+
+        // Whatever's left in `existing` is a conversation no longer in the list
+        // (e.g. the user left the group) — remove its node.
+        existing.forEach(li => li.remove());
     }
 
     // ── Select Conversation ──
@@ -516,7 +585,7 @@ const ChatAppController = (() => {
         // Header info
         const conv = conversations.find(c => c.id === id);
         if (conv) {
-            $('#chat-avatar').src = conv.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(conv.name);
+            $('#chat-avatar').src = resolveAvatarUrl(conv.avatar, conv.name);
             $('#chat-name').textContent = conv.name;
             updateChatHeaderStatus(conv);
         }
@@ -554,6 +623,34 @@ const ChatAppController = (() => {
         scrollToBottom();
     }
 
+    // Patches the sidebar preview (last message, time, unread count) for one
+    // conversation straight from a live message payload, with no server round
+    // trip. Every message used to trigger a full GET /api/conversations + a
+    // full sidebar rebuild — on a fast back-and-forth that's a network round
+    // trip's worth of jank per message. Returns false if the conversation isn't
+    // in the local list yet (e.g. it was just created elsewhere), so the caller
+    // can fall back to a real refetch for that one case.
+    function upsertConversationFromMessage(msg, { markRead = false } = {}) {
+        const conv = conversations.find(c => c.id === msg.conversationId);
+        if (!conv) return false;
+
+        conv.lastMessage = {
+            id: msg.id,
+            content: msg.content,
+            createdAt: msg.createdAt,
+            sender: msg.sender,
+            messageType: msg.messageType
+        };
+        conv.updatedAt = msg.createdAt;
+
+        if (markRead || msg.conversationId === activeConversationId || msg.senderId === currentUser.id) {
+            conv.unreadCount = 0;
+        } else {
+            conv.unreadCount = (conv.unreadCount || 0) + 1;
+        }
+        return true;
+    }
+
     async function appendMessage(msg) {
         // Not our own message, not a "X joined/left" system line, and not just the
         // server echoing back a message we sent from another of our own tabs.
@@ -568,7 +665,7 @@ const ChatAppController = (() => {
                 if (pendingEl) {
                     updatePendingMessage(pendingEl, msg);
                     hideTypingIndicatorDirect();
-                    loadConversations();
+                    if (upsertConversationFromMessage(msg)) renderConversations(); else await loadConversations();
                     return;
                 }
             }
@@ -583,13 +680,16 @@ const ChatAppController = (() => {
                 // through the GET /messages "mark as read" path — without this, the
                 // sidebar picked up a phantom unread badge for the chat you're
                 // actively looking at, that only cleared once you left and reopened it.
-                // Awaited so the loadConversations() refresh below reflects it.
-                await api(`/api/conversations/${msg.conversationId}/read`, { method: 'POST' });
+                api(`/api/conversations/${msg.conversationId}/read`, { method: 'POST' });
             }
         }
 
-        // Refresh conversations list to update preview
-        loadConversations();
+        // Patch the sidebar preview locally instead of refetching the whole list.
+        if (upsertConversationFromMessage(msg, { markRead: msg.conversationId === activeConversationId })) {
+            renderConversations();
+        } else {
+            await loadConversations();
+        }
     }
 
     function appendMessageHtml(msg) {
@@ -615,7 +715,7 @@ const ChatAppController = (() => {
             msgDiv.dataset.clientMsgId = msg.clientMsgId;
         }
 
-        const avatarUrl = msg.sender?.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(msg.sender?.displayName || 'User');
+        const avatarSrc = resolveAvatarUrl(msg.sender?.avatar, msg.sender?.displayName || 'User');
         const timeStr = formatTime(msg.createdAt);
 
         const replyQuoteHtml = msg.replyToSenderName ? `
@@ -698,7 +798,7 @@ const ChatAppController = (() => {
         const replyBtnHtml = msg.id ? renderReplyButtonHtml() : '';
 
         msgDiv.innerHTML = `
-            ${!isSelf ? `<img src="${avatarUrl}" alt="Avatar" class="msg__avatar">` : ''}
+            ${!isSelf ? `<img src="${avatarSrc}" alt="Avatar" class="msg__avatar">` : ''}
             <div class="msg__body">
                 ${bubbleContent}
                 <div class="msg__time">${timeStr} ${statusHtml}</div>
@@ -848,13 +948,29 @@ const ChatAppController = (() => {
     const THEME_KEY = 'chatbox_theme';
     const THEMES = ['galaxy', 'aqua', 'sand', 'graphite'];
 
+    // Namespaced per logged-in user — otherwise switching theme on one account
+    // in a shared browser silently overwrote what every other account on that
+    // same browser sees next time they log in.
+    function themeStorageKey() {
+        return currentUser?.id ? `${THEME_KEY}:${currentUser.id}` : THEME_KEY;
+    }
+
     function applyTheme(theme) {
-        // Galaxy is the default :root palette — represented by no data-theme attribute.
-        if (theme === 'galaxy') {
-            document.documentElement.removeAttribute('data-theme');
-        } else {
-            document.documentElement.setAttribute('data-theme', theme);
-        }
+        // CSS custom properties can't be transitioned without @property (heavy to
+        // register for the whole palette), so the swap itself is always an instant
+        // cut. Masking it with a brief opacity dip on <body> — a cheap,
+        // compositor-only property — turns that hard cut into a soft crossfade.
+        const body = document.body;
+        body.classList.add('theme-transitioning');
+        setTimeout(() => {
+            // Galaxy is the default :root palette — represented by no data-theme attribute.
+            if (theme === 'galaxy') {
+                document.documentElement.removeAttribute('data-theme');
+            } else {
+                document.documentElement.setAttribute('data-theme', theme);
+            }
+            body.classList.remove('theme-transitioning');
+        }, 90);
     }
 
     // Lives inline in the "My Profile" tab of the Admin Panel now (not a header
@@ -866,7 +982,7 @@ const ChatAppController = (() => {
 
         let saved = 'galaxy';
         try {
-            const t = localStorage.getItem(THEME_KEY);
+            const t = localStorage.getItem(themeStorageKey());
             if (THEMES.includes(t)) saved = t;
         } catch (e) {}
 
@@ -889,7 +1005,7 @@ const ChatAppController = (() => {
                 if (!input.checked) return;
                 applyTheme(input.value);
                 markActive(input.value);
-                try { localStorage.setItem(THEME_KEY, input.value); } catch (e) {}
+                try { localStorage.setItem(themeStorageKey(), input.value); } catch (e) {}
             });
         });
     }
@@ -897,8 +1013,8 @@ const ChatAppController = (() => {
     // ── My Profile tab (avatar + display name) ──
     function loadProfileTab() {
         if (!currentUser) return;
-        const avatarUrl = currentUser.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.displayName || 'User');
-        $('#profile-avatar-img').src = avatarUrl;
+        const avatarSrc = resolveAvatarUrl(currentUser.avatar, currentUser.displayName || 'User');
+        $('#profile-avatar-img').src = avatarSrc;
         $('#profile-display-name-preview').textContent = currentUser.displayName || '';
         $('#profile-email-preview').textContent = currentUser.email || '';
         $('#profile-display-name-input').value = currentUser.displayName || '';
@@ -909,7 +1025,7 @@ const ChatAppController = (() => {
     // Refresh every place currentUser's name/avatar is shown, after a profile edit.
     function applyCurrentUserToUI() {
         if ($('#sidebar-user-avatar')) {
-            $('#sidebar-user-avatar').src = currentUser.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.displayName);
+            $('#sidebar-user-avatar').src = resolveAvatarUrl(currentUser.avatar, currentUser.displayName);
         }
         if ($('#sidebar-user-name')) {
             $('#sidebar-user-name').textContent = currentUser.displayName;
@@ -996,7 +1112,7 @@ const ChatAppController = (() => {
         const modal = $('#modal-profile-view');
 
         $('#profile-view-title').textContent = 'Profile';
-        $('#profile-view-avatar').src = conv.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(conv.name);
+        $('#profile-view-avatar').src = resolveAvatarUrl(conv.avatar, conv.name);
         $('#profile-view-name').textContent = conv.name;
         $('#profile-view-sub').innerHTML = '';
         $('#profile-view-details').innerHTML = '';
@@ -1008,7 +1124,7 @@ const ChatAppController = (() => {
         const statusClass = user.status === 'ONLINE' ? 'dot--online' : (user.status === 'AWAY' ? 'dot--away' : 'dot--offline');
         const statusLabel = user.status === 'ONLINE' ? 'Online' : (user.status === 'AWAY' ? 'Away' : 'Offline');
 
-        $('#profile-view-avatar').src = user.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.displayName);
+        $('#profile-view-avatar').src = resolveAvatarUrl(user.avatar, user.displayName);
         $('#profile-view-name').textContent = user.displayName;
         $('#profile-view-sub').innerHTML = `<i class="dot ${statusClass}"></i> ${statusLabel}`;
         $('#profile-view-details').innerHTML = `
@@ -1023,7 +1139,7 @@ const ChatAppController = (() => {
         const modal = $('#modal-profile-view');
 
         $('#profile-view-title').textContent = 'Group Info';
-        $('#profile-view-avatar').src = conv.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(conv.name);
+        $('#profile-view-avatar').src = resolveAvatarUrl(conv.avatar, conv.name);
         $('#profile-view-name').textContent = conv.name;
         $('#profile-view-sub').textContent = 'Group Chat';
         $('#profile-view-details').innerHTML = '<p style="text-align:center; color:var(--text-muted); font-size:12px;">Loading members…</p>';
@@ -1042,7 +1158,7 @@ const ChatAppController = (() => {
             li.className = 'friend-item';
             li.innerHTML = `
                 <div class="friend-item__info">
-                    <img src="${p.user.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(p.user.displayName)}" alt="">
+                    <img src="${resolveAvatarUrl(p.user.avatar, p.user.displayName)}" alt="">
                     <div>
                         <div class="friend-item__name">${escapeHtml(p.user.displayName)}</div>
                         <div class="friend-item__sub">${ROLE_LABELS[p.role] || 'Member'}</div>
@@ -1087,7 +1203,7 @@ const ChatAppController = (() => {
                 const item = document.createElement('div');
                 item.className = 'mention-suggestion';
                 item.innerHTML = `
-                    <img src="${u.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(u.displayName)}" alt="">
+                    <img src="${resolveAvatarUrl(u.avatar, u.displayName)}" alt="">
                     <span>${escapeHtml(u.displayName)}</span>
                 `;
                 // mousedown (not click) fires before the input loses focus/blur
@@ -1365,7 +1481,7 @@ const ChatAppController = (() => {
             li.className = 'friend-item';
             li.innerHTML = `
                 <div class="friend-item__info">
-                    <img src="${member.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(member.displayName)}" alt="">
+                    <img src="${resolveAvatarUrl(member.avatar, member.displayName)}" alt="">
                     <div>
                         <div class="friend-item__name">${escapeHtml(member.displayName)}</div>
                         <div class="friend-item__sub">${ROLE_LABELS[participant.role] || 'Member'}</div>
@@ -1472,7 +1588,7 @@ const ChatAppController = (() => {
                     const row = document.createElement('li');
                     row.className = 'member-result';
                     row.innerHTML = `
-                        <img src="${member.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(member.displayName)}" alt="">
+                        <img src="${resolveAvatarUrl(member.avatar, member.displayName)}" alt="">
                         <span>${escapeHtml(member.displayName)} <span style="opacity:0.5; font-size:11px;">(${ROLE_LABELS[p.role] || 'Member'})</span></span>
                     `;
                     row.addEventListener('click', async () => {
@@ -1560,7 +1676,7 @@ const ChatAppController = (() => {
             tr.innerHTML = `
                 <td>
                     <div class="admin-user-cell">
-                        <img src="${u.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(u.displayName)}" alt="">
+                        <img src="${resolveAvatarUrl(u.avatar, u.displayName)}" alt="">
                         <span>${escapeHtml(u.displayName)}</span>
                     </div>
                 </td>
@@ -1674,7 +1790,7 @@ const ChatAppController = (() => {
                     const div = document.createElement('div');
                     div.className = 'member-result';
                     div.innerHTML = `
-                        <img src="${user.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.displayName)}" alt="">
+                        <img src="${resolveAvatarUrl(user.avatar, user.displayName)}" alt="">
                         <span>${escapeHtml(user.displayName)}</span>
                     `;
                     div.addEventListener('click', () => {
@@ -2044,7 +2160,7 @@ const ChatAppController = (() => {
             li.className = 'friend-item';
             li.innerHTML = `
                 <div class="friend-item__info">
-                    <img src="${user.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.displayName)}" alt="">
+                    <img src="${resolveAvatarUrl(user.avatar, user.displayName)}" alt="">
                     <div>
                         <div class="friend-item__name">${escapeHtml(user.displayName)}</div>
                         <div class="friend-item__sub">${escapeHtml(user.email)}</div>
@@ -2102,7 +2218,7 @@ const ChatAppController = (() => {
                 li.className = 'friend-item';
                 li.innerHTML = `
                     <div class="friend-item__info">
-                        <img src="${user?.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user?.displayName || '?')}" alt="">
+                        <img src="${resolveAvatarUrl(user?.avatar, user?.displayName || '?')}" alt="">
                         <div class="friend-item__name">${escapeHtml(user?.displayName || 'Unknown')}</div>
                     </div>
                     <div class="friend-item__actions">
@@ -2158,7 +2274,7 @@ const ChatAppController = (() => {
                 li.className = 'friend-item';
                 li.innerHTML = `
                     <div class="friend-item__info">
-                        <img src="${user?.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user?.displayName || '?')}" alt="">
+                        <img src="${resolveAvatarUrl(user?.avatar, user?.displayName || '?')}" alt="">
                         <div class="friend-item__name">${escapeHtml(user?.displayName || 'Unknown')}</div>
                     </div>
                     <div class="friend-item__actions">
