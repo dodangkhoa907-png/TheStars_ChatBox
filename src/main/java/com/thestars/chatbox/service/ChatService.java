@@ -48,9 +48,14 @@ public class ChatService {
     /**
      * Create a new 1-1 conversation between two users.
      * Returns existing conversation if one already exists.
+     *
+     * synchronized because check-then-create isn't atomic at the DB level here —
+     * without it, two rapid-fire requests (double-tapping "Message"/"Accept", or
+     * both sides of a friend-accept creating it at once) can each see "not found"
+     * and insert a duplicate conversation.
      */
     @Transactional
-    public Conversation getOrCreateSingleConversation(Long userId1, Long userId2) {
+    public synchronized Conversation getOrCreateSingleConversation(Long userId1, Long userId2) {
         // Check for existing conversation
         Optional<Conversation> existing = conversationDAO.findSingleConversation(userId1, userId2);
         if (existing.isPresent()) {

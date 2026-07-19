@@ -46,11 +46,7 @@ public class FileService {
     public Attachment uploadFile(MultipartFile file, Long messageId) throws IOException {
         // Generate unique filename to prevent collisions
         String originalFilename = file.getOriginalFilename();
-        String extension = "";
-        if (originalFilename != null && originalFilename.contains(".")) {
-            extension = originalFilename.substring(originalFilename.lastIndexOf("."));
-        }
-        String storedFilename = UUID.randomUUID().toString() + extension;
+        String storedFilename = UUID.randomUUID().toString() + safeExtension(originalFilename);
 
         // Save file to disk
         Path targetPath = uploadPath.resolve(storedFilename);
@@ -82,17 +78,30 @@ public class FileService {
         }
 
         String originalFilename = file.getOriginalFilename();
-        String extension = "";
-        if (originalFilename != null && originalFilename.contains(".")) {
-            extension = originalFilename.substring(originalFilename.lastIndexOf("."));
-        }
-        String storedFilename = UUID.randomUUID().toString() + extension;
+        String storedFilename = UUID.randomUUID().toString() + safeExtension(originalFilename);
 
         Path targetPath = uploadPath.resolve(storedFilename);
         Files.copy(file.getInputStream(), targetPath);
 
         log.info("Avatar uploaded: {} -> {} ({} bytes)", originalFilename, storedFilename, file.getSize());
         return "/uploads/" + storedFilename;
+    }
+
+    /**
+     * Extracts a safe file extension (dot included) from a client-supplied filename.
+     * The original filename is untrusted input: taking everything after the last '.'
+     * verbatim let a crafted upload (e.g. {@code "x.png/../../evil"} or
+     * {@code "x.png\" onerror=\"..."}) smuggle a path-traversal segment into the
+     * saved file's path, or a quote/HTML that breaks out of the unescaped
+     * {@code <img src="...">} this URL is later rendered into. Anything that isn't
+     * a short alphanumeric extension is dropped rather than trusted.
+     */
+    private static String safeExtension(String originalFilename) {
+        if (originalFilename == null) return "";
+        int dot = originalFilename.lastIndexOf('.');
+        if (dot < 0 || dot == originalFilename.length() - 1) return "";
+        String ext = originalFilename.substring(dot + 1);
+        return ext.matches("[a-zA-Z0-9]{1,10}") ? "." + ext : "";
     }
 
     /**

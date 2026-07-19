@@ -311,6 +311,9 @@ const ChatAppController = (() => {
         const btnLogout = $('#btn-logout');
         if (btnLogout) {
             btnLogout.addEventListener('click', () => {
+                // Sits right next to the other header icon buttons — require confirmation
+                // so a mis-tap (very easy on mobile) doesn't instantly end the session.
+                if (!confirm('Log out of ChatBox?')) return;
                 sessionStorage.removeItem('chat_token');
                 window.location.href = contextPath + '/login';
             });
@@ -487,6 +490,10 @@ const ChatAppController = (() => {
 
     // ── Select Conversation ──
     async function selectConversation(id) {
+        // Re-tapping the already-open conversation is a no-op — also avoids the
+        // in-flight loads below racing themselves.
+        if (activeConversationId === id) return;
+
         activeConversationId = id;
         cancelReply();
 
@@ -532,6 +539,10 @@ const ChatAppController = (() => {
     // ── Load & Render Messages ──
     async function loadMessages(id) {
         const messages = await api(`/api/conversations/${id}/messages?page=0&size=50`) || [];
+        // Bail if the user has since switched to a different conversation — otherwise
+        // this stale response (or a slow one racing a live incoming message) wipes
+        // the message pane out from under whatever is actually being viewed now.
+        if (id !== activeConversationId) return;
         const scrollContainer = $('#messages-scroll');
         if (!scrollContainer) return;
 
@@ -543,7 +554,7 @@ const ChatAppController = (() => {
         scrollToBottom();
     }
 
-    function appendMessage(msg) {
+    async function appendMessage(msg) {
         // Not our own message, not a "X joined/left" system line, and not just the
         // server echoing back a message we sent from another of our own tabs.
         if (msg.senderId !== currentUser.id && msg.messageType !== 'SYSTEM') {
@@ -568,6 +579,12 @@ const ChatAppController = (() => {
             // Acknowledge live delivery — only for messages from someone else
             if (msg.senderId !== currentUser.id && msg.id && stompClient?.connected) {
                 stompClient.send('/app/chat.delivered', {}, JSON.stringify({ messageId: msg.id }));
+                // A message landing here while the conversation is open was never run
+                // through the GET /messages "mark as read" path — without this, the
+                // sidebar picked up a phantom unread badge for the chat you're
+                // actively looking at, that only cleared once you left and reopened it.
+                // Awaited so the loadConversations() refresh below reflects it.
+                await api(`/api/conversations/${msg.conversationId}/read`, { method: 'POST' });
             }
         }
 
@@ -627,9 +644,21 @@ const ChatAppController = (() => {
                 </div>
             `;
         } else if (msg.messageType === 'IMAGE' && msg.attachments?.length) {
-            bubbleContent = replyQuoteHtml + msg.attachments.map(att =>
-                `<img src="${contextPath}${att.fileUrl}" class="message-image" style="max-width: 260px; border-radius: 12px; margin-top: 4px;" alt="Image">`
-            ).join('');
+            // Wrapped in .msg__bubble like every other message type — it was
+            // rendering as a bare <img> with no bubble frame, no sender name in
+            // group chats, and an unstyled reply-quote when replying to one.
+            bubbleContent = `
+                <div class="msg__bubble msg__bubble--image">
+                    <div class="msg__sender">${escapeHtml(msg.sender?.displayName)}</div>
+                    ${replyQuoteHtml}
+                    ${msg.attachments.map(att =>
+                        // encodeURI (not escapeHtml, which doesn't escape quotes) — this
+                        // is a URL going into an attribute, and a stray '"' from a
+                        // crafted filename would otherwise break out of src="...".
+                        `<img src="${contextPath}${encodeURI(att.fileUrl)}" class="message-image" alt="Image" loading="lazy" onerror="this.classList.add('message-image--broken')">`
+                    ).join('')}
+                </div>
+            `;
         } else if (msg.messageType === 'FILE' && msg.attachments?.length) {
             const att = msg.attachments[0];
             bubbleContent = `
@@ -1239,6 +1268,8 @@ const ChatAppController = (() => {
     // ── Load Side Panel Resources ──
     async function loadResources(conversationId) {
         const data = await api(`/api/conversations/${conversationId}/attachments`) || { images: [], files: [] };
+        // Bail if a newer conversation switch happened while this was in flight.
+        if (conversationId !== activeConversationId) return;
         const imageGrid = $('#images-grid');
         const fileList = $('#files-list');
 
@@ -1255,7 +1286,7 @@ const ChatAppController = (() => {
         data.images.forEach(img => {
             const thumb = document.createElement('div');
             thumb.className = 'img-thumb';
-            thumb.innerHTML = `<img src="${contextPath}${img.fileUrl}" alt="Thumb">`;
+            thumb.innerHTML = `<img src="${contextPath}${encodeURI(img.fileUrl)}" alt="Thumb">`;
             imageGrid.appendChild(thumb);
         });
 
@@ -1311,6 +1342,8 @@ const ChatAppController = (() => {
 
         const full = await api(`/api/conversations/${conversationId}`);
         if (!full || !full.participants) return;
+        // Bail if a newer conversation switch happened while this was in flight.
+        if (conversationId !== activeConversationId) return;
         activeGroupDetail = full;
 
         mentionCandidates = full.participants
@@ -2022,15 +2055,24 @@ const ChatAppController = (() => {
                     <button class="btn-danger-sm btn-remove-friend">Remove</button>
                 </div>
             `;
-            li.querySelector('.btn-message-friend').addEventListener('click', async () => {
-                const res = await api('/api/conversations', {
-                    method: 'POST',
-                    body: JSON.stringify({ type: 'SINGLE', userId: user.id })
-                });
-                if (res) {
-                    $('#friends-overlay').classList.add('hidden');
-                    await loadConversations();
-                    selectConversation(res.id);
+            li.querySelector('.btn-message-friend').addEventListener('click', async (e) => {
+                // Guard against rapid double-tapping firing this twice before the first
+                // request returns (was creating duplicate conversations).
+                const btn = e.currentTarget;
+                if (btn.disabled) return;
+                btn.disabled = true;
+                try {
+                    const res = await api('/api/conversations', {
+                        method: 'POST',
+                        body: JSON.stringify({ type: 'SINGLE', userId: user.id })
+                    });
+                    if (res) {
+                        $('#friends-overlay').classList.add('hidden');
+                        await loadConversations();
+                        selectConversation(res.id);
+                    }
+                } finally {
+                    btn.disabled = false;
                 }
             });
             li.querySelector('.btn-remove-friend').addEventListener('click', async () => {
@@ -2068,12 +2110,30 @@ const ChatAppController = (() => {
                         <button class="btn-danger-sm btn-decline-request">Decline</button>
                     </div>
                 `;
-                li.querySelector('.btn-accept-request').addEventListener('click', async () => {
+                li.querySelector('.btn-accept-request').addEventListener('click', async (e) => {
+                    // Guard against rapid double-tapping firing this twice before the
+                    // list re-renders (was creating duplicate conversations).
+                    const btn = e.currentTarget;
+                    if (btn.disabled) return;
+                    btn.disabled = true;
                     if (await api(`/api/friends/requests/${f.id}/accept`, { method: 'POST' })) {
                         showToast(`You and ${user?.displayName || 'this user'} are now friends!`, 'success');
                         loadFriends();
+                        // Open the chat immediately — no extra "Message" click needed.
+                        if (user?.id) {
+                            const conv = await api('/api/conversations', {
+                                method: 'POST',
+                                body: JSON.stringify({ type: 'SINGLE', userId: user.id })
+                            });
+                            if (conv) {
+                                await loadConversations();
+                                $('#friends-overlay')?.classList.add('hidden');
+                                selectConversation(conv.id);
+                            }
+                        }
                     } else {
                         showToast('Could not accept this request. Please try again.', 'error');
+                        btn.disabled = false;
                     }
                 });
                 li.querySelector('.btn-decline-request').addEventListener('click', async () => {
@@ -2149,8 +2209,18 @@ const ChatAppController = (() => {
             const name = evt.friendship?.requester?.displayName || 'Someone';
             showToast(`${name} sent you a friend request.`, 'info');
         } else if (evt.type === 'REQUEST_ACCEPTED') {
-            const name = evt.friendship?.addressee?.displayName || 'Someone';
+            const other = evt.friendship?.addressee;
+            const name = other?.displayName || 'Someone';
             showToast(`${name} accepted your friend request!`, 'success');
+            // Same "conversation shows right away" behavior for the side that sent
+            // the request — getOrCreateSingleConversation is idempotent so this is
+            // safe even if the acceptor's client already created it a moment ago.
+            if (other?.id) {
+                api('/api/conversations', {
+                    method: 'POST',
+                    body: JSON.stringify({ type: 'SINGLE', userId: other.id })
+                }).then(() => loadConversations());
+            }
         }
     }
 

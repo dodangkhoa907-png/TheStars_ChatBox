@@ -4,7 +4,15 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="2080dc0f-47f0-45d2-ad1d-ba895fa82100" name="Changes" comment="" />
+    <list default="true" id="2080dc0f-47f0-45d2-ad1d-ba895fa82100" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/FileController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/controller/FileController.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/ChatService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/ChatService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/FileService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/thestars/chatbox/service/FileService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/webapp/WEB-INF/views/login.jsp" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/webapp/WEB-INF/views/login.jsp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/webapp/css/style.css" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/webapp/css/style.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/webapp/js/app.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/webapp/js/app.js" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />

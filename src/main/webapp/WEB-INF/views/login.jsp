@@ -23,6 +23,7 @@
             align-items: center;
             justify-content: center;
             min-height: 100vh;
+            min-height: 100dvh;
             padding: 20px;
             position: relative;
             z-index: 1;
@@ -131,14 +132,31 @@
             opacity: 1;
         }
 
+        html, body {
+            height: auto !important;
+            min-height: 100vh !important;
+            overflow: auto !important;
+        }
+
         @media (max-width: 480px) {
-            .portal-container { padding: 12px; }
-            .portal-card { padding: 24px 20px; }
-            .login-title { font-size: 24px; }
+            .portal-container { padding: 12px 10px; }
+            .portal-card { padding: 22px 16px; }
+            .login-title { font-size: 22px; }
+            .login-logo { margin-bottom: 4px; }
+            .logo-ring { margin-bottom: 4px; }
+            .logo-ring svg { width: 48px; height: 48px; }
+            .glass-divider { margin: 12px 0; }
+            .portal-tabs { margin-bottom: 16px; }
+            .form-label { margin-bottom: 4px; font-size: 11px; }
+            .form-input { padding: 9px 12px; font-size: 16px !important; }
+            .btn-google { padding: 12px 16px; font-size: 14px; }
+            .login-tagline { font-size: 12px; }
+            .form-group { margin-bottom: 12px !important; }
+            .portal-footer-link { margin-top: 14px; }
         }
     </style>
 </head>
-<body>
+<body style="overflow: auto !important; height: auto !important; min-height: 100vh !important;">
 
     <!-- Animated Mesh Background -->
     <div class="bg-gradient" aria-hidden="true">

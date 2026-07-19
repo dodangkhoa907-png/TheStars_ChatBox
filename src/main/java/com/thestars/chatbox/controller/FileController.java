@@ -8,6 +8,7 @@ import com.thestars.chatbox.service.MessageService;
 import com.thestars.chatbox.service.UserService;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -96,10 +97,16 @@ public class FileController {
 
         try {
             Resource resource = new UrlResource(filePath.get().toUri());
+            // Build via ContentDisposition rather than string-concatenating the
+            // (client-supplied) original filename into the header value — a quote
+            // or control character in it would otherwise corrupt/inject into the
+            // Content-Disposition header.
+            ContentDisposition disposition = ContentDisposition.attachment()
+                    .filename(attachment.get().getFileName())
+                    .build();
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(attachment.get().getFileType()))
-                    .header(HttpHeaders.CONTENT_DISPOSITION,
-                            "attachment; filename=\"" + attachment.get().getFileName() + "\"")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
                     .body(resource);
         } catch (Exception e) {
             return ResponseEntity.status(500).build();
